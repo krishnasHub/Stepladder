@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { CHUNK_H, STEP } from '../chunks';
 import { Assist, NO_ASSIST, assistFor } from '../assist';
-import { playDeath, playDoubleJump, resumeAudio, startMusic, toggleMuted } from '../audio';
+import { playBonk, playDeath, playDoubleJump, resumeAudio, startMusic, toggleMuted } from '../audio';
 import { Bot, ProjectilePool, createBot } from '../entities';
 import { pixelText, upper } from '../font';
 import { GameInput, TOUCH_BUTTONS } from '../input';
@@ -662,6 +662,11 @@ export class GameScene extends Phaser.Scene {
     if (p.events.doubleJumped) {
       this.burst(p.x, p.y + PLAYER_H / 2, 6, this.palette.player, 55);
       playDoubleJump();
+    }
+    if (p.events.bonked) {
+      // A few chips off the ceiling, so the bonk is seen as well as heard.
+      this.burst(p.x, p.y - PLAYER_H / 2, 5, this.palette.env, 45);
+      playBonk();
     }
 
     // A jump "lands" successfully when it ends grounded rather than dead. After

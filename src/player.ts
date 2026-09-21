@@ -23,7 +23,16 @@ export interface PlayerEvents {
    * counting raw presses would flag a normal jump-then-double-jump as panic.
    */
   jumpWasted: boolean;
+  /** Cracked their head on a ceiling with real upward speed behind it. */
+  bonked: boolean;
 }
+
+/**
+ * Rising faster than this when a ceiling stops you counts as a bonk. Below it
+ * the contact is a graze — usually corner correction nearly saving a jump — and
+ * announcing that would be noise.
+ */
+const BONK_SPEED = 55;
 
 export interface TrailPoint {
   x: number;
@@ -64,6 +73,7 @@ export class Player {
     landed: false,
     stomped: false,
     jumpWasted: false,
+    bonked: false,
   };
 
   reset(x: number, y: number): void {
@@ -97,6 +107,7 @@ export class Player {
     const T = TUNING;
     const ev = this.events;
     ev.jumped = ev.doubleJumped = ev.landed = ev.stomped = ev.jumpWasted = false;
+    ev.bonked = false;
 
     // --- Horizontal -------------------------------------------------------
     const dir = (input.right ? 1 : 0) - (input.left ? 1 : 0);
@@ -214,6 +225,8 @@ export class Player {
           }
         }
       }
+      // Corner correction did not save it, so this is a real ceiling.
+      if (this.vy < -BONK_SPEED) this.events.bonked = true;
       const ty = Math.floor(this.top / TILE);
       this.y = (ty + 1) * TILE + PLAYER_H / 2 + 0.001;
       this.vy = 0;

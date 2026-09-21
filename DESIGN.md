@@ -498,4 +498,16 @@ Android Studio + $25 one-time. No code depends on this.
       Square-wave themes are trimmed to 0.72, since a square carries far more
       harmonic energy than a triangle and reads louder and harsher at equal
       amplitude — untrimmed they were 1.25x the others.
+  - **Head bonk**: a small comedic d'oh, plus a few chips off the ceiling. A
+    sawtooth swept through a narrow bandpass is what makes it read as a voice
+    rather than a beep -- the moving filter peak imitates a vowel formant
+    sliding down, which is most of what a d'oh actually is. Pitch and filter
+    fall together so it lands like a shrug.
+    - Only fires above `BONK_SPEED` (55 px/s upward). Below that the contact
+      is a graze, usually corner correction nearly saving a jump, and calling
+      that out would be noise. Verified: zero false positives across repeated
+      open-air jumping, and exactly one event on a real ceiling.
+    - Rate-limited to one per 0.22s. A player wedged under a ledge can touch
+      it on consecutive frames, and a stutter of d'ohs stops being funny
+      immediately. Verified: twelve calls in one instant produce one sound.
   - Still open: stomp and level-complete sounds.

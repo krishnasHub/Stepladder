@@ -170,6 +170,53 @@ export function playDoubleJump(): void {
   }
 }
 
+let lastBonk = -1;
+
+/**
+ * Head-bonk: a small comedic "d'oh".
+ *
+ * A sawtooth swept through a narrow bandpass is what makes it read as a voice
+ * rather than a beep — the moving filter peak imitates a vowel formant sliding
+ * down, which is most of what "d'oh" actually is. Both the pitch and the filter
+ * fall together, so it lands like a shrug.
+ *
+ * Rate-limited: a player wedged under a ledge can contact it on consecutive
+ * frames, and a stutter of d'ohs stops being funny immediately.
+ */
+export function playBonk(): void {
+  const c = ensure();
+  if (!c || !master || muted) return;
+  if (lastBonk >= 0 && c.currentTime - lastBonk < 0.22) return;
+  lastBonk = c.currentTime;
+  try {
+    const t = c.currentTime;
+
+    const osc = c.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(400, t);
+    osc.frequency.exponentialRampToValueAtTime(185, t + 0.17);
+
+    const bp = c.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.Q.value = 4.5;
+    bp.frequency.setValueAtTime(950, t);
+    bp.frequency.exponentialRampToValueAtTime(470, t + 0.17);
+
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.13, t + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+
+    osc.connect(bp);
+    bp.connect(g);
+    g.connect(master);
+    osc.start(t);
+    osc.stop(t + 0.24);
+  } catch {
+    /* never let a sound take the game down */
+  }
+}
+
 /**
  * The death sound: a soft square gliding down a couple of octaves with a puff
  * on the front. Deflating, not punishing — you are about to retry in half a

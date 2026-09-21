@@ -151,5 +151,5 @@ A useful side effect: any bug reproduces from its seed.
 ## Status
 
 MVP. Playable end to end. Art is programmatic shapes rather than pixel-art
-sprites. Sound is death, double jump, and a generative ambient score. See the
-milestone table in DESIGN.md.
+sprites. Sound is death, double jump, head bonk, and a chirpy music-box score.
+See the milestone table in DESIGN.md.
