@@ -446,4 +446,15 @@ Android Studio + $25 one-time. No code depends on this.
   20–40s). Ramping 45s → 90s; re-measure at M4 with a controller in hand.
 - Scoring / time-attack layer? Not planned. Determinism makes leaderboards and
   ghost replays cheap to add later if wanted.
-- Audio direction — undecided, M6.
+- Audio: only the death sound exists so far. It is **synthesised at runtime**
+  (`audio.ts`) rather than loaded, so the single-file build stays a single file
+  and there is nothing that can fail to load. A soft square gliding down two
+  octaves with a noise puff on the front — deflating rather than scolding,
+  since you are retrying half a second later.
+  - The AudioContext is created lazily and resumed from a real input event,
+    because browsers refuse to start audio outside a user gesture.
+  - Everything degrades to silence rather than throwing; verified that a
+    simulated Web Audio failure neither propagates nor stops the game.
+  - `M` mutes, persisted. Muted creates no audio nodes at all rather than
+    zeroing a gain.
+  - Still open: jump, stomp and level-complete sounds, and music.

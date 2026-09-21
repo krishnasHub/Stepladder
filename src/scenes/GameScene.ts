@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { CHUNK_H, STEP } from '../chunks';
 import { Assist, NO_ASSIST, assistFor } from '../assist';
+import { playDeath, resumeAudio, toggleMuted } from '../audio';
 import { Bot, ProjectilePool, createBot } from '../entities';
 import { pixelText, upper } from '../font';
 import { GameInput, TOUCH_BUTTONS } from '../input';
@@ -321,6 +322,11 @@ export class GameScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(101);
     this.txtDebug = pixelText(this, 8, 24, '').setScrollFactor(0).setDepth(101).setVisible(false);
+
+    // Audio cannot start outside a user gesture.
+    this.input.once('pointerdown', resumeAudio);
+    this.input.keyboard?.once('keydown', resumeAudio);
+    this.input.keyboard?.on('keydown-M', () => toggleMuted());
 
     this.input.keyboard?.on('keydown-BACKTICK', () => {
       this.debug = !this.debug;
@@ -968,6 +974,7 @@ export class GameScene extends Phaser.Scene {
 
     this.state = 'dying';
     this.stateTimer = TUNING.deathFreeze + TUNING.respawnDelay;
+    playDeath();
     this.deaths++;
     this.jumpStreak = 0;
     this.heartTimer = 0;

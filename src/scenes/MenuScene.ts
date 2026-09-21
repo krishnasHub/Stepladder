@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { resumeAudio, toggleMuted } from '../audio';
 import { pixelText } from '../font';
 import { LEVELS, RUN_SEED, formatTime, loadProgress } from '../levels';
 import { PALETTES } from '../palette';
@@ -93,10 +94,14 @@ export class MenuScene extends Phaser.Scene {
       color: pal.env,
       originX: 0.5,
     });
-    pixelText(this, VIRTUAL_W / 2, VIRTUAL_H - 18, 'R restart - ESC menu - ` debug', {
+    pixelText(this, VIRTUAL_W / 2, VIRTUAL_H - 18, 'R restart - ESC menu - M mute - ` debug', {
       color: pal.env,
       originX: 0.5,
     }).setAlpha(0.75);
+
+    this.input.once('pointerdown', resumeAudio);
+    this.input.keyboard?.once('keydown', resumeAudio);
+    this.input.keyboard?.on('keydown-M', () => toggleMuted());
 
     const kb = this.input.keyboard;
     kb?.on('keydown-UP', () => this.move(-1));

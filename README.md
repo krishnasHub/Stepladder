@@ -45,6 +45,7 @@ Then open the URL it prints (default <http://localhost:5173>).
 | Jump / double jump | `Space`, `W`, or `↑` | button, bottom-right |
 | Restart level | `R` | — |
 | Back to menu | `Esc` | — |
+| Mute | `M` | — |
 | Debug overlay | `` ` `` | — |
 
 Hold jump longer to jump higher. The double jump refreshes every time you stomp
@@ -79,6 +80,8 @@ src/
   levels.ts     Level definitions and progress persistence.
   palette.ts    Four pastel colours per level.
   font.ts       Built-in 5x7 bitmap font, generated to a texture at boot.
+  audio.ts      Web Audio sound, synthesised at runtime. No audio files.
+  assist.ts     Local difficulty help at repeated failure points.
   input.ts      Keyboard + touch, one surface.
   scenes/       Menu and Game.
 ```
@@ -124,5 +127,6 @@ A useful side effect: any bug reproduces from its seed.
 
 ## Status
 
-MVP. Playable end to end; art is programmatic shapes rather than pixel-art
-sprites, and there is no audio yet. See the milestone table in DESIGN.md.
+MVP. Playable end to end. Art is programmatic shapes rather than pixel-art
+sprites, and the only sound so far is the death sound. See the milestone table
+in DESIGN.md.
