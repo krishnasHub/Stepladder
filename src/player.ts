@@ -1,3 +1,4 @@
+import { Assist, NO_ASSIST } from './assist';
 import { GameInput } from './input';
 import { PLAYER_H, PLAYER_W, TILE, TUNING } from './tuning';
 import { TileGrid } from './world';
@@ -92,7 +93,7 @@ export class Player {
     return this.y - PLAYER_H / 2;
   }
 
-  step(dt: number, input: GameInput, grid: TileGrid): void {
+  step(dt: number, input: GameInput, grid: TileGrid, assist: Assist = NO_ASSIST): void {
     const T = TUNING;
     const ev = this.events;
     ev.jumped = ev.doubleJumped = ev.landed = ev.stomped = ev.jumpWasted = false;
@@ -100,7 +101,7 @@ export class Player {
     // --- Horizontal -------------------------------------------------------
     const dir = (input.right ? 1 : 0) - (input.left ? 1 : 0);
     if (dir !== 0) {
-      const accel = this.grounded ? T.accelGround : T.accelAir;
+      const accel = this.grounded ? T.accelGround : T.accelAir * assist.airControl;
       this.vx += dir * accel * dt;
       this.vx = Math.max(-T.runSpeed, Math.min(T.runSpeed, this.vx));
       this.facing = dir;
@@ -115,7 +116,7 @@ export class Player {
       // refreshing the buffer so it never expires — without this, fast mashing
       // registers as nothing at all, which is backwards.
       if (this.bufferPending) ev.jumpWasted = true;
-      this.buffer = T.jumpBufferTime;
+      this.buffer = T.jumpBufferTime * assist.jumpBuffer;
       this.bufferPending = true;
     }
     if (this.buffer > 0) {
@@ -129,7 +130,7 @@ export class Player {
 
     if (this.buffer > 0) {
       if (this.grounded || this.coyote > 0) {
-        this.vy = -T.jumpVelocity;
+        this.vy = -T.jumpVelocity * assist.jumpPower;
         this.jumpsLeft = 1;
         this.buffer = 0;
         this.coyote = 0;
@@ -139,7 +140,7 @@ export class Player {
         this.squash();
         ev.jumped = true;
       } else if (this.jumpsLeft > 0) {
-        this.vy = -T.doubleJumpVelocity;
+        this.vy = -T.doubleJumpVelocity * assist.jumpPower;
         this.jumpsLeft--;
         this.buffer = 0;
         this.cutApplied = false;
@@ -166,7 +167,7 @@ export class Player {
     // --- Ground probe -----------------------------------------------------
     this.grounded = grid.overlapsSolid(this.left + 1, this.top + PLAYER_H, PLAYER_W - 2, 2);
     if (this.grounded) {
-      this.coyote = TUNING.coyoteTime;
+      this.coyote = TUNING.coyoteTime * assist.coyote;
       this.jumpsLeft = 1;
       if (!this.wasGrounded) {
         ev.landed = true;

@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { CHUNK_H, STEP } from '../chunks';
+import { Assist, NO_ASSIST, assistFor } from '../assist';
 import { Bot, ProjectilePool, createBot } from '../entities';
 import { pixelText, upper } from '../font';
 import { GameInput, TOUCH_BUTTONS } from '../input';
@@ -50,6 +51,21 @@ const BG_LAYERS = [
  * player actually has to land on.
  */
 const BG_AREA_PER_BLOCK = 36000;
+
+/**
+ * Assistance is LOCAL. It applies only within `ASSIST_RADIUS` of a spot the
+ * player keeps dying at — never across the whole level. Someone who is fine
+ * everywhere but one gap gets help at that gap and full difficulty elsewhere,
+ * and a player who is not stuck never sees it at all.
+ *
+ * The radius is generous enough to cover the approach, since the jump that
+ * fails begins well before the place you land.
+ */
+const ASSIST_RADIUS = 150;
+/** Deaths in one spot before the terrain there is widened. */
+const DEATHS_PER_SPOT_EASE = 4;
+/** Cap on how many spots per level get terrain help, so a level cannot dissolve. */
+const MAX_SPOT_EASES = 4;
 
 /** Consecutive clean landings before the player can show a heart eye. */
 const HEART_STREAK = 5;
@@ -196,6 +212,9 @@ export class GameScene extends Phaser.Scene {
   private heartTimer = 0;
   private stressScore = 0;
   private stressTimer = 0;
+  private assist: Assist = NO_ASSIST;
+  private deathSpots = new Map<string, { cx: number; cy: number; hits: number }>();
+  private easedSpots = new Set<string>();
   private gTerrain!: Phaser.GameObjects.Graphics;
   private gEnt!: Phaser.GameObjects.Graphics;
   private gHud!: Phaser.GameObjects.Graphics;
@@ -293,6 +312,9 @@ export class GameScene extends Phaser.Scene {
 
     this.deaths = 0;
     this.elapsed = 0;
+    this.deathSpots.clear();
+    this.easedSpots.clear();
+    this.assist = NO_ASSIST;
     this.cameras.main.setBackgroundColor(this.palette.bg);
     this.drawStaticLayers();
     this.respawn(true);
@@ -569,8 +591,9 @@ export class GameScene extends Phaser.Scene {
     this.elapsed += dt;
     const p = this.player;
     const grid = this.level.grid;
+    this.assist = this.assistAt(p.x, p.y);
 
-    p.step(dt, this.gi, grid);
+    p.step(dt, this.gi, grid, this.assist);
 
     if (p.events.landed) this.burst(p.x, p.y + PLAYER_H / 2, 4, this.palette.env, 40);
     if (p.events.doubleJumped) this.burst(p.x, p.y + PLAYER_H / 2, 6, this.palette.player, 55);
@@ -600,6 +623,7 @@ export class GameScene extends Phaser.Scene {
 
     const ctx = {
       grid,
+      assist: this.assist,
       playerX: p.x,
       playerY: p.y,
       projectiles: this.projectiles,
@@ -768,8 +792,99 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.setScroll(Math.round(this.camX), Math.round(this.camY));
   }
 
+  /** Coarse bucket for "roughly the same place", three tiles across. */
+  private spotKey(x: number, y: number): string {
+    return `${Math.floor(x / (TILE * 3))},${Math.floor(y / (TILE * 3))}`;
+  }
+
+  /**
+   * Assistance in force at a position — the strongest of any trouble spot the
+   * player is currently near. Away from trouble spots this returns NO_ASSIST,
+   * so the level plays at full difficulty everywhere the player is coping.
+   */
+  private assistAt(x: number, y: number): Assist {
+    const per = this.def.deathsPerAssistTier;
+    if (per <= 0 || this.deathSpots.size === 0) return NO_ASSIST;
+
+    let worst = 0;
+    for (const spot of this.deathSpots.values()) {
+      if (spot.hits < per) continue;
+      if (Math.hypot(x - spot.cx, y - spot.cy) > ASSIST_RADIUS) continue;
+      if (spot.hits > worst) worst = spot.hits;
+    }
+    return worst ? assistFor(worst, per) : NO_ASSIST;
+  }
+
+  /**
+   * Widen the footing at one spot the player keeps failing.
+   *
+   * Scoped deliberately: only the tiles around a repeated death move, and only
+   * once each. Everything else in the level stays exactly as learned. Easing a
+   * choke point is safe in a way that reshuffling the level is not — the muscle
+   * memory built at a spot you have died on five times is memory of a jump you
+   * cannot make, so there is nothing there worth preserving.
+   *
+   * Only ever ADDS floor to the outer edge of an existing ledge, so a route can
+   * be made easier but never blocked.
+   */
+  private easeTerrainNear(x: number, y: number): boolean {
+    const grid = this.level.grid;
+    const ptx = Math.floor(x / TILE);
+    const pty = Math.floor(y / TILE);
+
+    // Standable ledge edges near the death: solid, walkable on top, with a drop
+    // immediately to one side.
+    const edges: { tx: number; ty: number; dir: number; d: number }[] = [];
+    for (let ty = pty - 7; ty <= pty + 3; ty++) {
+      for (let tx = ptx - 9; tx <= ptx + 9; tx++) {
+        if (!grid.solidAt(tx, ty) || grid.solidAt(tx, ty - 1)) continue;
+        for (const dir of [-1, 1]) {
+          // The neighbour must be open, and stay open above, or we would be
+          // building a wall rather than a ledge.
+          if (grid.solidAt(tx + dir, ty) || grid.solidAt(tx + dir, ty - 1)) continue;
+          edges.push({ tx, ty, dir, d: Math.hypot(tx - ptx, (ty - pty) * 1.5) });
+        }
+      }
+    }
+    if (!edges.length) return false;
+    edges.sort((a, b) => a.d - b.d);
+
+    // Extend at most the two nearest edges — one tile each, so a gap closes by
+    // up to two tiles at this spot and nowhere else.
+    let changed = 0;
+    const used = new Set<string>();
+    for (const e of edges) {
+      if (changed >= 2) break;
+      const key = `${e.tx},${e.ty},${e.dir}`;
+      if (used.has(key)) continue;
+      used.add(key);
+      const nx = e.tx + e.dir;
+      grid.set(nx, e.ty, 1);
+      this.level.terrain.push({ x: nx * TILE, y: e.ty * TILE, w: TILE, h: TILE });
+      changed++;
+    }
+
+    if (changed) this.drawStaticLayers();
+    return changed > 0;
+  }
+
   private die(): void {
     if (this.state !== 'playing') return;
+
+    // Record where this happened; enough deaths in one place earns a nudge.
+    const key = this.spotKey(this.player.x, this.player.y);
+    const spot = this.deathSpots.get(key) ?? { cx: this.player.x, cy: this.player.y, hits: 0 };
+    spot.hits++;
+    this.deathSpots.set(key, spot);
+
+    if (
+      spot.hits >= DEATHS_PER_SPOT_EASE &&
+      !this.easedSpots.has(key) &&
+      this.easedSpots.size < MAX_SPOT_EASES
+    ) {
+      if (this.easeTerrainNear(this.player.x, this.player.y)) this.easedSpots.add(key);
+    }
+
     this.state = 'dying';
     this.stateTimer = TUNING.deathFreeze + TUNING.respawnDelay;
     this.deaths++;
@@ -998,6 +1113,7 @@ export class GameScene extends Phaser.Scene {
         `grounded ${p.grounded ? 'Y' : 'N'}  jumps ${p.jumpsLeft}`,
         `bots ${this.bots.filter((b) => b.alive).length}  parts ${this.particles.length}`,
         `chunks ${this.level.chunks.length}  rects ${this.level.terrain.length}`,
+        `assist ${this.assist.tier}  spots ${this.deathSpots.size}  eased ${this.easedSpots.size}`,
       ]
         .join('\n')
         .toUpperCase(),

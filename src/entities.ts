@@ -1,3 +1,4 @@
+import { Assist } from './assist';
 import { Rng } from './rng';
 import { TILE } from './tuning';
 import { SpawnKind, TileGrid } from './world';
@@ -59,6 +60,7 @@ export class ProjectilePool {
 
 export interface BotCtx {
   grid: TileGrid;
+  assist: Assist;
   playerX: number;
   playerY: number;
   projectiles: ProjectilePool;
@@ -90,6 +92,7 @@ export abstract class Bot {
   abstract step(dt: number, ctx: BotCtx): void;
 
   protected fireAt(ctx: BotCtx, speed = PROJECTILE_SPEED): void {
+    speed *= ctx.assist.projectileSpeed;
     const dx = ctx.playerX - this.x;
     const dy = ctx.playerY - this.y;
     const len = Math.hypot(dx, dy) || 1;
@@ -119,10 +122,11 @@ export class Turret extends Bot {
   }
 
   step(dt: number, ctx: BotCtx): void {
+    const wu = WINDUP_TIME * ctx.assist.windup;
     this.timer -= dt;
-    this.windup = this.timer < WINDUP_TIME ? 1 - this.timer / WINDUP_TIME : 0;
+    this.windup = this.timer < wu ? 1 - this.timer / wu : 0;
     if (this.timer <= 0) {
-      this.timer = this.interval;
+      this.timer = this.interval * ctx.assist.fireInterval;
       this.windup = 0;
       this.fireAt(ctx);
     }
@@ -167,15 +171,16 @@ export class Walker extends Bot {
     else this.x += this.dir * this.speed * dt;
 
     // Shoot when roughly level with the player and within sight.
+    const wu = WINDUP_TIME * ctx.assist.windup;
     this.timer -= dt;
     const aligned = Math.abs(ctx.playerY - this.y) < 26 && Math.abs(ctx.playerX - this.x) < 150;
-    this.windup = aligned && this.timer < WINDUP_TIME ? 1 - this.timer / WINDUP_TIME : 0;
+    this.windup = aligned && this.timer < wu ? 1 - this.timer / wu : 0;
     if (this.timer <= 0) {
-      this.timer = this.interval;
+      this.timer = this.interval * ctx.assist.fireInterval;
       this.windup = 0;
       if (aligned) {
         const s = Math.sign(ctx.playerX - this.x) || this.dir;
-        ctx.projectiles.spawn(this.x, this.y, s * PROJECTILE_SPEED, 0);
+        ctx.projectiles.spawn(this.x, this.y, s * PROJECTILE_SPEED * ctx.assist.projectileSpeed, 0);
       }
     }
   }
@@ -212,12 +217,18 @@ export class Flyer extends Bot {
     this.y = this.baseY + Math.sin(this.t * 1.7 + this.phase) * this.amp;
     this.x = this.baseX + Math.sin(this.t * 0.9 + this.phase) * (this.amp * 0.5);
 
+    const wu = WINDUP_TIME * ctx.assist.windup;
     this.timer -= dt;
-    this.windup = this.timer < WINDUP_TIME ? 1 - this.timer / WINDUP_TIME : 0;
+    this.windup = this.timer < wu ? 1 - this.timer / wu : 0;
     if (this.timer <= 0) {
-      this.timer = this.interval;
+      this.timer = this.interval * ctx.assist.fireInterval;
       this.windup = 0;
-      ctx.projectiles.spawn(this.x, this.y + this.h / 2, 0, PROJECTILE_SPEED * 0.8);
+      ctx.projectiles.spawn(
+        this.x,
+        this.y + this.h / 2,
+        0,
+        PROJECTILE_SPEED * 0.8 * ctx.assist.projectileSpeed,
+      );
     }
   }
 }

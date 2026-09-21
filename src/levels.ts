@@ -15,6 +15,12 @@ export interface LevelDef {
   difficultyScale: number;
   enemyMix: SpawnKind[];
   hint: string;
+  /**
+   * Deaths AT ONE SPOT per step of assistance. Assistance is local, so this
+   * counts repeated failures in the same place, not deaths across the level.
+   * Longer levels ask for a little more patience before helping. See assist.ts.
+   */
+  deathsPerAssistTier: number;
 }
 
 /**
@@ -29,6 +35,7 @@ export const LEVELS: LevelDef[] = [
     difficultyScale: 0.6,
     enemyMix: ['turret'],
     hint: 'Move right. Double jump with a second tap.',
+    deathsPerAssistTier: 3,
   },
   {
     name: 'The Climb',
@@ -37,6 +44,7 @@ export const LEVELS: LevelDef[] = [
     difficultyScale: 0.8,
     enemyMix: ['turret', 'flyer'],
     hint: 'Climb. Stomp a bot to refresh your double jump.',
+    deathsPerAssistTier: 3,
   },
   {
     name: 'Ascent',
@@ -45,6 +53,7 @@ export const LEVELS: LevelDef[] = [
     difficultyScale: 0.9,
     enemyMix: ['turret', 'walker', 'flyer'],
     hint: 'Up and to the right.',
+    deathsPerAssistTier: 4,
   },
   {
     name: 'Long Haul',
@@ -53,6 +62,7 @@ export const LEVELS: LevelDef[] = [
     difficultyScale: 1,
     enemyMix: ['turret', 'walker', 'flyer'],
     hint: 'Everything you have learned, for longer.',
+    deathsPerAssistTier: 4,
   },
   {
     name: 'High Rise',
@@ -61,6 +71,7 @@ export const LEVELS: LevelDef[] = [
     difficultyScale: 1.1,
     enemyMix: ['turret', 'walker', 'flyer'],
     hint: 'Bot ladders. Do not look down.',
+    deathsPerAssistTier: 4,
   },
   {
     name: 'Summit',
@@ -69,6 +80,7 @@ export const LEVELS: LevelDef[] = [
     difficultyScale: 1.25,
     enemyMix: ['turret', 'walker', 'flyer'],
     hint: 'The long diagonal.',
+    deathsPerAssistTier: 5,
   },
 ];
 

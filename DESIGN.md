@@ -153,6 +153,50 @@ without limit, which is what makes the level 2 vertical climb work.
 All constants live in one `tuning.ts`. Generator constraints are **derived from
 them**, so retuning the jump automatically retunes what can be generated.
 
+### Local difficulty assistance
+
+After repeated deaths **in the same place**, the game quietly gives ground
+there — and only there.
+
+The key word is *local*. A blanket buff after N deaths would be wrong: it
+punishes the player who is fine everywhere but one gap by trivialising the
+whole level, and it rewrites a level they have otherwise learned. So assistance
+keys off a trouble spot — deaths bucketed into 3-tile cells — and applies only
+within `ASSIST_RADIUS` (150px) of one. That radius is generous because the jump
+that fails begins well before the place you land.
+
+Two kinds of help, in three tiers (`assist.ts`):
+
+| Lever | At tier 3 |
+|---|---|
+| Coyote time, jump buffer | ×2.2 / ×2.0 |
+| Jump power, air control | ×1.09 / ×1.45 |
+| Projectile speed | ×0.6 |
+| Fire interval, windup telegraph | ×1.7 / ×2.0 |
+
+Plus, after `DEATHS_PER_SPOT_EASE` (4) deaths in one cell, the **terrain at that
+cell** is widened: up to two ledge edges extend one tile toward each other,
+closing the gap by up to two tiles. Capped at `MAX_SPOT_EASES` (4) per level.
+
+Constraints this respects:
+
+- **It never removes a bot.** In a `botGated` chunk the bot *is* the route;
+  deleting it makes the chunk unsolvable.
+- **It only ever adds floor**, to the outer edge of an existing ledge with
+  headroom above. A route can become easier, never blocked. Verified across 103
+  easings on all six levels: zero previously-standable tiles lost footing.
+- **The rest of the level is untouched**, so everything learned still holds.
+  Verified: a run with one death sees assist tier 0 and no terrain change.
+
+Why easing a choke point is safe when reshuffling a level is not: the muscle
+memory built at a spot you have died on five times is memory of a jump you
+cannot make. There is nothing there worth preserving. Elsewhere, there is.
+
+Timing does necessarily change under assistance — slower shots are the point —
+so the strict "identical replay" property holds only until help arrives. The
+*spatial* layout, which is what a player actually memorises, changes at a
+trouble spot and nowhere else.
+
 ---
 
 ## 5. Procedural generation — chunk grammar
