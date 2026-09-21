@@ -350,6 +350,23 @@ favor the player.
   landings. Measured 1 in 4.9, never before the streak, and reset on death.
   - It is a **5×4** heart. A 3×3 was tried first and reads as a letter Y —
     three pixels cannot carry two lobes.
+- **Expressions, in priority order.** Each uses a visually distinct number of
+  marks so two states can never be mistaken for each other at 10×14 pixels:
+
+  | State | Face | Trigger |
+  |---|---|---|
+  | Stressed | flat squint + sweat bead | mashing jump with nothing to spend |
+  | Delighted | 5×4 heart | 5 clean landings, then ~1 in 4–5 |
+  | Nervous | **two** wide eyes + 1px shiver | within 170px of a spot that killed them 3× |
+  | Focused | streak + forward eye | 0.5s above 82% of top speed, one direction |
+  | Thinking | "..." rising off the head | standing still for 5s |
+  | Default | single 2×2 dot | — |
+
+  The nervous threshold matches where assistance begins, so the face and the
+  help agree: the player looks worried at exactly the gap the game has decided
+  to ease. Its radius is slightly wider, so the nerves arrive first.
+
+  The shiver is applied to the drawn position only — physics never sees it.
 - **The eye shifts to a focused look while sprinting** — a motion streak
   trailing a forward-set eye, mirrored to the direction of travel. It engages
   only after `FOCUS_AFTER` (0.5s) above `FOCUS_SPEED_FRAC` (82%) of top speed in

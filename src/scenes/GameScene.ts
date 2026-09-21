@@ -109,6 +109,29 @@ const FOCUS_PIXELS: ReadonlyArray<readonly [number, number]> = [
   [4, 1],
 ];
 
+/** Standing still this long reads as stopping to think. */
+const IDLE_AFTER = 5;
+/** One full "..." thought cycle. */
+const IDLE_CYCLE = 1.8;
+/**
+ * Thought dots, rising away from the head and mirrored to facing.
+ * `[x, y, size]` inside a 6-wide box.
+ */
+const IDLE_DOTS: ReadonlyArray<readonly [number, number, number]> = [
+  [0, 5, 1],
+  [2, 3, 1],
+  [4, 0, 2],
+];
+const IDLE_BOX_W = 6;
+
+/**
+ * Nervousness near a spot that has killed the player this many times. Set to
+ * match the point where assistance begins, so the face and the help agree.
+ * The radius is slightly wider than ASSIST_RADIUS so the nerves arrive first.
+ */
+const SCARED_HITS = 3;
+const SCARED_RADIUS = 170;
+
 /** A 2x3 sweat bead that drifts down and repeats while stressed. */
 const SWEAT_PIXELS: ReadonlyArray<readonly [number, number]> = [
   [1, 0],
@@ -240,6 +263,8 @@ export class GameScene extends Phaser.Scene {
   private stressTimer = 0;
   private runTimer = 0;
   private runDir = 1;
+  private idleTimer = 0;
+  private scared = false;
   private assist: Assist = NO_ASSIST;
   private deathSpots = new Map<string, { cx: number; cy: number; hits: number }>();
   private easedSpots = new Set<string>();
@@ -371,6 +396,8 @@ export class GameScene extends Phaser.Scene {
     this.stressScore = 0;
     this.stressTimer = 0;
     this.runTimer = 0;
+    this.idleTimer = 0;
+    this.scared = false;
 
     this.camX = this.player.x - VIRTUAL_W / 2;
     this.camY = this.player.y - VIRTUAL_H * 0.55;
@@ -648,6 +675,20 @@ export class GameScene extends Phaser.Scene {
     else {
       this.runTimer = 0;
       this.runDir = p.facing;
+    }
+
+    // Standing still, on the ground, hands off the controls.
+    const still = p.grounded && Math.abs(p.vx) < 4 && !this.gi.left && !this.gi.right;
+    this.idleTimer = still ? this.idleTimer + dt : 0;
+
+    // Nerves near somewhere that has killed them repeatedly.
+    this.scared = false;
+    for (const spot of this.deathSpots.values()) {
+      if (spot.hits < SCARED_HITS) continue;
+      if (Math.hypot(p.x - spot.cx, p.y - spot.cy) <= SCARED_RADIUS) {
+        this.scared = true;
+        break;
+      }
     }
 
     // Stress: wasted presses accumulate, and decay when the player settles.
@@ -933,6 +974,8 @@ export class GameScene extends Phaser.Scene {
     this.stressScore = 0;
     this.stressTimer = 0;
     this.runTimer = 0;
+    this.idleTimer = 0;
+    this.scared = false;
     this.player.alive = false;
     this.burst(this.player.x, this.player.y, 22, this.palette.player, 130);
     this.cameras.main.shake(160, 0.012);
@@ -1097,10 +1140,25 @@ export class GameScene extends Phaser.Scene {
 
       const w = PLAYER_W * p.scaleX;
       const h = PLAYER_H * p.scaleY;
-      const px = p.x - w / 2;
+      // A 1px shiver while nervous. Visual only — physics never sees it.
+      const shiver = this.scared ? Math.floor(this.elapsed * 14) % 2 : 0;
+      const px = p.x - w / 2 + shiver;
       const py = p.y + PLAYER_H / 2 - h; // anchored at the feet
       g.fillStyle(pal.player, 1);
       g.fillRoundedRect(px, py, w, h, 2);
+
+      // Thought dots while idle, outside the body so they need the body colour.
+      if (this.idleTimer >= IDLE_AFTER) {
+        const phase = (this.idleTimer % IDLE_CYCLE) / IDLE_CYCLE;
+        const shown = phase < 0.22 ? 1 : phase < 0.44 ? 2 : phase < 0.85 ? 3 : 0;
+        const bx = Math.round(p.facing > 0 ? px + w * 0.5 : px + w * 0.5 - IDLE_BOX_W);
+        const by = Math.round(py - 9);
+        for (let i = 0; i < shown; i++) {
+          const [dx, dy, size] = IDLE_DOTS[i];
+          const mx = p.facing > 0 ? dx : IDLE_BOX_W - size - dx;
+          g.fillRect(bx + mx, by + dy, size, size);
+        }
+      }
       // Facing notch, in the background colour, so it reads as an eye — or a
       // heart, when a run of clean landings has left the player pleased.
       g.fillStyle(pal.bg, 1);
@@ -1108,6 +1166,11 @@ export class GameScene extends Phaser.Scene {
       if (this.stressTimer > 0) {
         // Squint: a flat line reads as a screwed-shut eye at this size.
         g.fillRect(ex - 1, Math.round(py + 4), 3, 1);
+      } else if (this.heartTimer === 0 && this.scared) {
+        // Wide eyes. Two of them is the whole trick — every other expression
+        // here uses one mark, so a pair reads instantly as startled.
+        g.fillRect(Math.round(px + w * 0.18), Math.round(py + 3), 2, 2);
+        g.fillRect(Math.round(px + w * 0.58), Math.round(py + 3), 2, 2);
       } else if (this.heartTimer === 0 && this.runTimer >= FOCUS_AFTER) {
         // Streak behind a forward-set eye, mirrored to face travel.
         const fx = Math.round(p.facing > 0 ? px + w - FOCUS_W - 1 : px + 1);
@@ -1163,6 +1226,7 @@ export class GameScene extends Phaser.Scene {
         `bots ${this.bots.filter((b) => b.alive).length}  parts ${this.particles.length}`,
         `chunks ${this.level.chunks.length}  rects ${this.level.terrain.length}`,
         `assist ${this.assist.tier}  spots ${this.deathSpots.size}  eased ${this.easedSpots.size}`,
+        `idle ${this.idleTimer.toFixed(1)}  run ${this.runTimer.toFixed(1)}  scared ${this.scared ? 'Y' : 'N'}`,
       ]
         .join('\n')
         .toUpperCase(),
