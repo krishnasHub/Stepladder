@@ -2,6 +2,8 @@
 
 > The things trying to kill you are also the only way up.
 
+![Stepladder — the player mid-leap toward a turret on a platform above, in the vertical level The Climb](docs/screenshots/the-climb.png)
+
 A pastel 2D procedurally-generated side-scroller. Six levels across three
 orientations — run right, climb up, and ascend diagonally — all driven by one
 system.
@@ -11,6 +13,14 @@ double jump*. Bots aren't obstacles, they're terrain. Some ledges are only
 reachable by stomping your way up to them.
 
 See [DESIGN.md](DESIGN.md) for the full design.
+
+## Screenshots
+
+| Ground Floor — the horizontal opener | Ascent — diagonal, with spikes |
+| :--- | :--- |
+| ![Running right and leaping a pit, with parallax platforms behind](docs/screenshots/ground-floor.png) | ![Leaping a spike on a diagonal climb](docs/screenshots/ascent.png) |
+| **Level select** | **The palette shifts every level** |
+| ![The level select screen listing six levels](docs/screenshots/menu.png) | Mint, lavender, peach, sky, rose, slate — four colours each. |
 
 ---
 
