@@ -3,10 +3,19 @@ import { resumeAudio, startMusic, toggleMuted } from '../audio';
 import { pixelText } from '../font';
 import { LEVELS, RUN_SEED, formatTime, loadProgress } from '../levels';
 import { PALETTES } from '../palette';
+import { drawTufflingPreview, loadTufflingId, tufflingById } from '../tufflings';
 import { VIRTUAL_H, VIRTUAL_W } from '../tuning';
 
 const ROW_H = 16;
 const ROW_TOP = 96;
+/** The Tufflings row sits under the levels, a little apart from them. */
+const TUFFLINGS_ROW = LEVELS.length;
+const ROW_COUNT = LEVELS.length + 1;
+/** The equipped tuffling hops beside the title, at its in-game size. */
+const MASCOT_SCALE = 1;
+/** Where its feet stand, in screen pixels: level with the base of the title. */
+const MASCOT_X = 332;
+const MASCOT_FEET_Y = 51;
 
 export class MenuScene extends Phaser.Scene {
   private selected = 0;
@@ -14,6 +23,8 @@ export class MenuScene extends Phaser.Scene {
   private carets: Phaser.GameObjects.BitmapText[] = [];
   private unlocked = 0;
   private runSeed = RUN_SEED;
+  private mascot!: Phaser.GameObjects.Graphics;
+  private tuffling = tufflingById(loadTufflingId());
 
   constructor() {
     super('Menu');
@@ -54,6 +65,9 @@ export class MenuScene extends Phaser.Scene {
       originX: 0.5,
       originY: 0.5,
     });
+
+    this.tuffling = tufflingById(loadTufflingId());
+    this.mascot = this.add.graphics().setScale(MASCOT_SCALE);
 
     pixelText(this, VIRTUAL_W / 2, 66, 'Stomp a bot to refresh your double jump', {
       color: pal.env,
@@ -101,6 +115,26 @@ export class MenuScene extends Phaser.Scene {
       this.rows.push(t);
     });
 
+    // Tufflings: pick who does the jumping.
+    const py = ROW_TOP + TUFFLINGS_ROW * ROW_H + 6;
+    this.carets.push(pixelText(this, VIRTUAL_W / 2 - 118, py, '>', { color: pal.player, originY: 0.5 }));
+    const pt = pixelText(this, VIRTUAL_W / 2 - 100, py, 'Tufflings', { color: pal.ink, originY: 0.5 });
+    pixelText(this, VIRTUAL_W / 2 + 118, py, this.tuffling.name, {
+      color: pal.env,
+      originX: 1,
+      originY: 0.5,
+    });
+    pt.setInteractive(new Phaser.Geom.Rectangle(-110, -ROW_H / 2, 240, ROW_H), Phaser.Geom.Rectangle.Contains);
+    pt.on('pointerover', () => {
+      this.selected = TUFFLINGS_ROW;
+      this.refresh();
+    });
+    pt.on('pointerdown', () => {
+      this.selected = TUFFLINGS_ROW;
+      this.start();
+    });
+    this.rows.push(pt);
+
     pixelText(this, VIRTUAL_W / 2, VIRTUAL_H - 30, 'Arrows or A D - Space to jump', {
       color: pal.env,
       originX: 0.5,
@@ -132,8 +166,26 @@ export class MenuScene extends Phaser.Scene {
    * key not working. `start()` still refuses to launch a locked level, so the
    * caret landing there just shows you what you have not reached yet.
    */
+  override update(time: number): void {
+    // Facing the title, hopping now and then.
+    const g = this.mascot;
+    g.clear();
+    const t = time / 1000;
+    const mood = t % 4 < 1 ? 'happy' : 'default';
+    drawTufflingPreview(
+      g,
+      this.tuffling,
+      mood,
+      MASCOT_X / MASCOT_SCALE,
+      MASCOT_FEET_Y / MASCOT_SCALE,
+      -1,
+      PALETTES[0],
+      t,
+    );
+  }
+
   private move(d: number): void {
-    const n = LEVELS.length;
+    const n = ROW_COUNT;
     this.selected = (this.selected + d + n) % n;
     this.refresh();
   }
@@ -142,7 +194,7 @@ export class MenuScene extends Phaser.Scene {
     const pal = PALETTES[0];
     this.rows.forEach((t, i) => {
       const on = i === this.selected;
-      const locked = i > this.unlocked;
+      const locked = i !== TUFFLINGS_ROW && i > this.unlocked;
       this.carets[i].setVisible(on);
       this.carets[i].setTint(locked ? pal.env : pal.player);
       t.setTint(locked ? pal.env : on ? pal.player : pal.ink);
@@ -150,6 +202,10 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private start(): void {
+    if (this.selected === TUFFLINGS_ROW) {
+      this.scene.start('Tufflings');
+      return;
+    }
     if (this.selected > this.unlocked) return;
     this.scene.start('Game', { levelIndex: this.selected, runSeed: this.runSeed });
   }

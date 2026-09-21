@@ -412,7 +412,25 @@ favor the player.
   | jump + double jump, repeated | 0 | no |
   | skilled jump-buffering (15/15 buffered jumps fired) | 0 | no |
   | mashing mid-air, out of jumps | 7 | yes, after 4 |
-- Player: ~10 × 14 px.
+- **Tufflings.** The player picks a character, a *Tuffling*, from the title
+  screen; Mochi is the default. Four ship: Mochi (two button eyes), Button
+  (one shiny eye), Peeper (one big eye with a lid) and Classic (the original
+  block). All share the 10×14 hitbox; only the drawing differs. They live in
+  `src/tufflings.ts`, and the choice is saved per browser.
+  - Plush bodies are lit from the top-left with a shaded base and carry blush
+    on content moods, which drains when stressed or nervous.
+  - Six more faces on top of the six above, slotted into the same one-face
+    precedence: **ouch** (head bonk), **dizzy** (respawning within 8s of the
+    previous death), **proud** (a stomp), **starry** (the exit portal on
+    screen), **sleepy** (12s idle). Order: ouch › stressed › dizzy › proud ›
+    delighted › starry › focused › sleepy › thinking › nervous › default.
+  - Two layers that are not moods: a blink every few seconds, and a gaze that
+    follows a jump up and a fall down. They touch only the resting faces, so
+    they never fight the one-face rule.
+  - Classic has only the original six faces. A face it lacks is *skipped* in
+    the precedence, not replaced by the default, so it still shows focus
+    beside the portal.
+- Player: ~10 × 14 px hitbox; tufflings draw 10–12 wide.
 
 ---
 

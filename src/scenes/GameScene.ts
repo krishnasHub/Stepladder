@@ -8,6 +8,7 @@ import { GameInput, TOUCH_BUTTONS } from '../input';
 import { LEVELS, LevelDef, formatTime, recordCompletion } from '../levels';
 import { Palette, paletteFor } from '../palette';
 import { Player } from '../player';
+import { Box, Face, TufflingDef, drawTuffling, loadTufflingId, tufflingById } from '../tufflings';
 import { Rng, levelSeed } from '../rng';
 import {
   FIXED_DT,
@@ -93,38 +94,8 @@ const FOCUS_AFTER = 0.5;
 /** Fraction of top speed that counts as running rather than drifting. */
 const FOCUS_SPEED_FRAC = 0.82;
 
-/**
- * The focused face, 5 wide, authored facing RIGHT and mirrored when facing left:
- *   # # . # #
- *   . . . # #
- * A motion streak trailing a forward-set eye. Deliberately unlike the stress
- * squint (a flat line) so the two never read as the same expression.
- */
-const FOCUS_W = 5;
-const FOCUS_PIXELS: ReadonlyArray<readonly [number, number]> = [
-  [0, 0],
-  [1, 0],
-  [3, 0],
-  [4, 0],
-  [3, 1],
-  [4, 1],
-];
-
 /** Standing still this long reads as stopping to think. */
 const IDLE_AFTER = 5;
-/** One full "..." thought cycle. */
-const IDLE_CYCLE = 1.8;
-/**
- * Thought dots, rising away from the head and mirrored to facing.
- * `[x, y, size]` inside a 6-wide box.
- */
-const IDLE_DOTS: ReadonlyArray<readonly [number, number, number]> = [
-  [0, 5, 1],
-  [2, 3, 1],
-  [4, 0, 2],
-];
-const IDLE_BOX_W = 6;
-
 /**
  * Nervousness near a spot that has killed the player this many times. Set to
  * match the point where assistance begins, so the face and the help agree.
@@ -133,38 +104,21 @@ const IDLE_BOX_W = 6;
 const SCARED_HITS = 3;
 const SCARED_RADIUS = 170;
 
-/** A 2x3 sweat bead that drifts down and repeats while stressed. */
-const SWEAT_PIXELS: ReadonlyArray<readonly [number, number]> = [
-  [1, 0],
-  [0, 1],
-  [1, 1],
-  [0, 2],
-  [1, 2],
-];
-
+/** Hands off this long and thinking gives way to dozing. */
+const SLEEP_AFTER = 12;
+/** A stomp is the signature move; the face owns it for a moment. */
+const PROUD_TIME = 0.6;
+/** A head bonk, held just long enough to land alongside the d'oh. */
+const BONK_TIME = 0.45;
 /**
- * A 5x4 heart, drawn pixel by pixel in place of the eye:
- *   . # . # .
- *   # # # # #
- *   . # # # .
- *   . . # . .
- * A 3x3 version was tried first and reads as a letter Y — there are not enough
- * pixels for the two lobes to register. Five wide still fits the 10px body.
+ * Two deaths this close together (level seconds) is the frustrated moment, and
+ * the next respawn starts with a brief wobble — sympathetic, not mocking.
  */
-const HEART_W = 5;
-const HEART_PIXELS: ReadonlyArray<readonly [number, number]> = [
-  [1, 0],
-  [3, 0],
-  [0, 1],
-  [1, 1],
-  [2, 1],
-  [3, 1],
-  [4, 1],
-  [1, 2],
-  [2, 2],
-  [3, 2],
-  [2, 3],
-];
+const DIZZY_WINDOW = 8;
+const DIZZY_TIME = 0.7;
+/** Vertical speeds past which the eyes follow a jump up, or a fall down. */
+const GAZE_UP_VY = -60;
+const GAZE_DOWN_VY = 150;
 
 interface BgLayer {
   gfx: Phaser.GameObjects.Graphics;
@@ -279,6 +233,14 @@ export class GameScene extends Phaser.Scene {
   private runDir = 1;
   private idleTimer = 0;
   private scared = false;
+  private proudTimer = 0;
+  private bonkTimer = 0;
+  private dizzyTimer = 0;
+  /** Level time of the last two deaths, for spotting a frustrated streak. */
+  private lastDeathAt = -Infinity;
+  private prevDeathAt = -Infinity;
+  private tuffling: TufflingDef = tufflingById(loadTufflingId());
+  private readonly tufflingBox: Box = { left: 0, top: 0, w: 0, h: 0 };
   private assist: Assist = NO_ASSIST;
   private deathSpots = new Map<string, { cx: number; cy: number; hits: number }>();
   private easedSpots = new Set<string>();
@@ -302,6 +264,9 @@ export class GameScene extends Phaser.Scene {
 
   create(): void {
     this.gi = new GameInput(this);
+    // Re-read on every visit: the scene object is reused, and the player may
+    // have picked a different tuffling on the menu since.
+    this.tuffling = tufflingById(loadTufflingId());
 
     this.bgLayers = BG_LAYERS.map((cfg, i) => ({
       gfx: this.add.graphics().setDepth(i * 2).setScrollFactor(cfg.scroll),
@@ -384,6 +349,8 @@ export class GameScene extends Phaser.Scene {
 
     this.deaths = 0;
     this.elapsed = 0;
+    this.lastDeathAt = -Infinity;
+    this.prevDeathAt = -Infinity;
     this.deathSpots.clear();
     this.easedSpots.clear();
     this.assist = NO_ASSIST;
@@ -418,6 +385,10 @@ export class GameScene extends Phaser.Scene {
     this.runTimer = 0;
     this.idleTimer = 0;
     this.scared = false;
+    this.proudTimer = 0;
+    this.bonkTimer = 0;
+    // Back again straight after the last death: a brief wobble.
+    this.dizzyTimer = !fresh && this.lastDeathAt - this.prevDeathAt <= DIZZY_WINDOW ? DIZZY_TIME : 0;
 
     this.camX = this.player.x - VIRTUAL_W / 2;
     this.camY = this.player.y - VIRTUAL_H * 0.55;
@@ -687,7 +658,11 @@ export class GameScene extends Phaser.Scene {
       // A few chips off the ceiling, so the bonk is seen as well as heard.
       this.burst(p.x, p.y - PLAYER_H / 2, 5, this.palette.env, 45);
       playBonk();
+      this.bonkTimer = BONK_TIME;
     }
+    if (this.bonkTimer > 0) this.bonkTimer -= dt;
+    if (this.proudTimer > 0) this.proudTimer -= dt;
+    if (this.dizzyTimer > 0) this.dizzyTimer -= dt;
 
     // A jump "lands" successfully when it ends grounded rather than dead. After
     // a run of them, the player occasionally looks pleased with itself.
@@ -793,6 +768,9 @@ export class GameScene extends Phaser.Scene {
       if (p.vy > 0 && pb.y + pb.h <= b.y + 4) {
         b.kill();
         p.stompBounce();
+        // Set here rather than from `events.stomped`: the stomp happens after
+        // the player's step, and the next step clears the event unread.
+        this.proudTimer = PROUD_TIME;
         this.burst(b.x, b.y, 12, this.palette.hazard, 90);
         this.cameras.main.shake(90, 0.006);
       } else {
@@ -1001,6 +979,9 @@ export class GameScene extends Phaser.Scene {
       if (this.easeTerrainNear(this.player.x, this.player.y)) this.easedSpots.add(key);
     }
 
+    this.prevDeathAt = this.lastDeathAt;
+    this.lastDeathAt = this.elapsed;
+
     this.state = 'dying';
     this.stateTimer = TUNING.deathFreeze + TUNING.respawnDelay;
     playDeath();
@@ -1117,9 +1098,14 @@ export class GameScene extends Phaser.Scene {
   /**
    * The one expression showing right now. Precedence, highest first:
    *
-   *   stressed  something is going wrong this instant — always wins
+   *   bonk      a hit to the head — the briefest, and it is always the cause
+   *   stressed  something is going wrong this instant
+   *   dizzy     just back from a string of deaths
+   *   proud     just stomped a bot
    *   happy     a short earned celebration, worth not swallowing
+   *   starry    the exit portal is in sight
    *   focused   committed movement
+   *   sleepy    hands off for a long while
    *   thinking  deliberately stopped
    *   scared    a standing mood, not an event — so it yields to all of them
    *
@@ -1127,14 +1113,33 @@ export class GameScene extends Phaser.Scene {
    * a moment, so if the player is sprinting through that region or has stopped
    * to think in it, those say more about what they are doing right now. It
    * shows only when nothing else is.
+   *
+   * A face the current tuffling does not have is skipped, not replaced by the
+   * default, so the classic block still shows focus near the portal.
    */
-  private currentFace(): 'stressed' | 'happy' | 'focused' | 'thinking' | 'scared' | 'default' {
+  private currentFace(): Face {
+    const has = this.tuffling.faces;
+    if (this.bonkTimer > 0 && has.has('bonk')) return 'bonk';
     if (this.stressTimer > 0) return 'stressed';
+    if (this.dizzyTimer > 0 && has.has('dizzy')) return 'dizzy';
+    if (this.proudTimer > 0 && has.has('proud')) return 'proud';
     if (this.heartTimer > 0) return 'happy';
+    if (has.has('starry') && this.goalInView()) return 'starry';
     if (this.runTimer >= FOCUS_AFTER) return 'focused';
+    if (this.idleTimer >= SLEEP_AFTER && has.has('sleepy')) return 'sleepy';
     if (this.idleTimer >= IDLE_AFTER) return 'thinking';
     if (this.scared) return 'scared';
     return 'default';
+  }
+
+  private goalInView(): boolean {
+    const g = this.level.goal;
+    return (
+      g.x < this.camX + VIRTUAL_W &&
+      g.x + g.w > this.camX &&
+      g.y < this.camY + VIRTUAL_H &&
+      g.y + g.h > this.camY
+    );
   }
 
   /** Distant figures. Redrawn each frame; the platforms behind them are static. */
@@ -1239,14 +1244,17 @@ export class GameScene extends Phaser.Scene {
       // the shiver, the thought dots, the sweat bead, the eye itself — hangs
       // off this single value, so two of them can never appear at once.
       let face = this.currentFace();
+      const def = this.tuffling;
 
-      let w = PLAYER_W * p.scaleX;
-      let h = PLAYER_H * p.scaleY;
-      // A 1px shiver, only while nervous is the face actually showing.
-      // Visual only — physics never sees it.
+      // The tuffling's drawn size squashes and stretches; the hitbox never does.
+      let w = Math.max(1, Math.round(def.w * p.scaleX));
+      let h = Math.max(1, Math.round(def.h * p.scaleY));
+      // A 1px shiver while nervous, a sway while dizzy. Visual only — physics
+      // never sees either.
       const shiver = face === 'scared' ? Math.floor(this.elapsed * 14) % 2 : 0;
-      let px = p.x - w / 2 + shiver;
-      let py = p.y + PLAYER_H / 2 - h; // anchored at the feet
+      const sway = face === 'dizzy' ? Math.round(Math.sin(this.elapsed * 5)) : 0;
+      let px = Math.round(p.x - w / 2) + shiver + sway;
+      let py = Math.round(p.y + PLAYER_H / 2) - h; // anchored at the feet
 
       if (entering) {
         // Crouch, then get pulled to the portal's centre, stretching tall and
@@ -1268,67 +1276,29 @@ export class GameScene extends Phaser.Scene {
         const ease = 1 - Math.pow(1 - pull, 3);
         const cx = this.enterFromX + (gcx - this.enterFromX) * ease;
         const cy = this.enterFromY + (gcy - this.enterFromY) * ease;
-        w = Math.max(1, PLAYER_W * sx);
-        h = Math.max(1, PLAYER_H * sy);
-        px = cx - w / 2;
-        py = cy - h / 2;
+        w = Math.max(1, Math.round(def.w * sx));
+        h = Math.max(1, Math.round(def.h * sy));
+        px = Math.round(cx - w / 2);
+        py = Math.round(cy - h / 2);
       }
 
-      g.fillStyle(pal.player, 1);
-      g.fillRoundedRect(px, py, w, h, Math.min(2, w / 2, h / 2));
-      // Too thin to carry a face.
-      const faceShown = w >= 5;
-
-      // Thought dots, outside the body so they need the body colour.
-      if (face === 'thinking') {
-        const phase = (this.idleTimer % IDLE_CYCLE) / IDLE_CYCLE;
-        const shown = phase < 0.22 ? 1 : phase < 0.44 ? 2 : phase < 0.85 ? 3 : 0;
-        const bx = Math.round(p.facing > 0 ? px + w * 0.5 : px + w * 0.5 - IDLE_BOX_W);
-        const by = Math.round(py - 9);
-        for (let i = 0; i < shown; i++) {
-          const [dx, dy, size] = IDLE_DOTS[i];
-          const mx = p.facing > 0 ? dx : IDLE_BOX_W - size - dx;
-          g.fillRect(bx + mx, by + dy, size, size);
-        }
+      // The eyes follow a jump — up while rising, down once falling fast — but
+      // only on the resting faces, so gaze never fights a mood.
+      let gaze = 0;
+      if (!p.grounded && !entering && (face === 'default' || face === 'scared')) {
+        gaze = p.vy < GAZE_UP_VY ? -1 : p.vy > GAZE_DOWN_VY ? 1 : 0;
       }
+      // Thought dots count up from the moment thinking began. The level clock
+      // stops at the finish, so the portal entry keeps blinking on its own.
+      const clock =
+        face === 'thinking' ? this.idleTimer - IDLE_AFTER : this.elapsed + (entering ? this.enterT : 0);
 
-      // The face itself, in the background colour so it reads as a cut-out.
-      g.fillStyle(pal.bg, 1);
-      const ex = Math.round(p.facing > 0 ? px + w - 4 : px + 2);
-      if (face === 'stressed') {
-        // Squint: a flat line reads as a screwed-shut eye at this size.
-        g.fillRect(ex - 1, Math.round(py + 4), 3, 1);
-      } else if (face === 'happy') {
-        // Keep the whole heart on the body, on whichever side the eye is.
-        const hx = Math.round(p.facing > 0 ? px + w - HEART_W - 1 : px + 1);
-        const hy = Math.round(py + 2);
-        for (const [dx, dy] of HEART_PIXELS) g.fillRect(hx + dx, hy + dy, 1, 1);
-      } else if (face === 'focused') {
-        // Streak behind a forward-set eye, mirrored to face travel.
-        const fx = Math.round(p.facing > 0 ? px + w - FOCUS_W - 1 : px + 1);
-        const fy = Math.round(py + 3);
-        for (const [dx, dy] of FOCUS_PIXELS) {
-          const mx = p.facing > 0 ? dx : FOCUS_W - 1 - dx;
-          g.fillRect(fx + mx, fy + dy, 1, 1);
-        }
-      } else if (face === 'scared') {
-        // Wide eyes. Two of them is the whole trick — every other expression
-        // here uses one mark, so a pair reads instantly as startled.
-        g.fillRect(Math.round(px + w * 0.18), Math.round(py + 3), 2, 2);
-        g.fillRect(Math.round(px + w * 0.58), Math.round(py + 3), 2, 2);
-      } else if (faceShown) {
-        // 'thinking' keeps the plain eye; the dots above carry the meaning.
-        g.fillRect(ex, py + 3, 2, 2);
-      }
-
-      // Sweat bead, off the trailing edge so it never sits on the face.
-      if (face === 'stressed') {
-        const phase = (this.elapsed * 2.2) % 1;
-        const sx = Math.round(p.facing > 0 ? px - 3 : px + w + 1);
-        const sy = Math.round(py + phase * 7);
-        g.fillStyle(pal.player, 1);
-        for (const [dx, dy] of SWEAT_PIXELS) g.fillRect(sx + dx, sy + dy, 1, 1);
-      }
+      const box = this.tufflingBox;
+      box.left = px;
+      box.top = py;
+      box.w = w;
+      box.h = h;
+      drawTuffling(g, def, face, box, p.facing, pal, clock, gaze);
     }
 
     // --- Particles ---------------------------------------------------------

@@ -113,7 +113,8 @@ src/
   music.ts      Chirpy music-box score: a theme for the title and each level.
   assist.ts     Local difficulty help at repeated failure points.
   input.ts      Keyboard + touch, one surface.
-  scenes/       Menu and Game.
+  tufflings.ts   The Tufflings: every playable character, its faces, and the pick.
+  scenes/       Menu, Tufflings (character select) and Game.
 ```
 
 ## Authoring a level chunk

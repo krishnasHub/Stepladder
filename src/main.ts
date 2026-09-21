@@ -4,6 +4,7 @@ import { validateChunks } from './chunks';
 import { BootScene } from './scenes/BootScene';
 import { GameScene } from './scenes/GameScene';
 import { MenuScene } from './scenes/MenuScene';
+import { TufflingsScene } from './scenes/TufflingsScene';
 import { VIRTUAL_H, VIRTUAL_W } from './tuning';
 
 // Surface authoring typos loudly rather than shipping a broken chunk.
@@ -26,7 +27,7 @@ const game = new Phaser.Game({
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
   fps: { target: 60 },
-  scene: [BootScene, MenuScene, GameScene],
+  scene: [BootScene, MenuScene, TufflingsScene, GameScene],
 });
 
 // Dev handles for debugging from the console.
