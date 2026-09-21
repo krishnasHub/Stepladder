@@ -1,5 +1,5 @@
 import { Assist, NO_ASSIST } from './assist';
-import { GameInput } from './input';
+import type { GameInput } from './input';
 import { PLAYER_H, PLAYER_W, TILE, TUNING } from './tuning';
 import { TileGrid } from './world';
 

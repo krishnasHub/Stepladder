@@ -117,6 +117,26 @@ src/
   scenes/       Menu, Tufflings (character select) and Game.
 ```
 
+## Level editor
+
+With the dev server running, open **http://localhost:5199/editor.html** to
+hand-build a level: platforms, spikes, turrets, a start point and an exit
+portal, in any of the six palettes. **Play ▶** (or Ctrl+Enter) opens it in the
+game; finishing it starts it again, so you can keep trying. Checks in the
+sidebar flag anything that would stop it working, like a missing portal or a
+turret too boxed-in to stomp.
+
+It also checks the level **can be finished**, using the game's own physics: a
+search drives an invisible player through every distinct route it can reach
+until it touches the portal, then draws that route over the level. If there's
+no way through, it says so and marks the closest point it got to. It runs in the
+background after you pause editing, with no time limit; turret bullets are
+ignored, since dodging them is timing, not whether a route exists.
+
+Levels are saved in this browser only, and playtests record no progress.
+Export/Import moves a level between browsers as JSON. The editor is dev-only
+and never part of a build.
+
 ## Authoring a level chunk
 
 Chunks are 24x16 ASCII grids in `src/chunks.ts`. Add one to the right family

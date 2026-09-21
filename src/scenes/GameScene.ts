@@ -6,7 +6,8 @@ import { Bot, ProjectilePool, createBot } from '../entities';
 import { pixelText, upper } from '../font';
 import { GameInput, TOUCH_BUTTONS } from '../input';
 import { LEVELS, LevelDef, formatTime, recordCompletion } from '../levels';
-import { Palette, paletteFor } from '../palette';
+import { CustomLevel } from '../customLevels';
+import { PALETTES, Palette, paletteFor } from '../palette';
 import { Player } from '../player';
 import { Box, Face, TufflingDef, drawTuffling, loadTufflingId, tufflingById } from '../tufflings';
 import { Rng, levelSeed } from '../rng';
@@ -20,7 +21,7 @@ import {
   VIRTUAL_H,
   VIRTUAL_W,
 } from '../tuning';
-import { BuiltLevel, Rect, buildLevel } from '../world';
+import { BuiltLevel, Rect, buildCustomLevel, buildLevel } from '../world';
 
 interface Particle {
   x: number;
@@ -191,6 +192,8 @@ function rectsOverlap(a: Rect, b: Rect): boolean {
 export class GameScene extends Phaser.Scene {
   private levelIndex = 0;
   private runSeed = 1;
+  /** A hand-built level from the editor, being playtested. Null for the real levels. */
+  private custom: CustomLevel | null = null;
 
   private def!: LevelDef;
   private palette!: Palette;
@@ -257,9 +260,10 @@ export class GameScene extends Phaser.Scene {
     super('Game');
   }
 
-  init(data: { levelIndex?: number; runSeed?: number }): void {
+  init(data: { levelIndex?: number; runSeed?: number; custom?: CustomLevel }): void {
     this.levelIndex = data.levelIndex ?? 0;
     this.runSeed = data.runSeed ?? 1;
+    this.custom = data.custom ?? null;
   }
 
   create(): void {
@@ -319,21 +323,34 @@ export class GameScene extends Phaser.Scene {
   // -------------------------------------------------------------------------
 
   private startLevel(): void {
-    this.def = LEVELS[this.levelIndex];
-    this.palette = paletteFor(this.levelIndex);
-
     // One seeded stream builds the terrain AND the bots, so a retry after death
     // reproduces the level exactly.
     const rng = new Rng(levelSeed(this.runSeed, this.levelIndex));
-    this.level = buildLevel(
-      {
-        family: this.def.family,
-        chunkCount: this.def.chunkCount,
-        difficultyScale: this.def.difficultyScale,
-        enemyMix: this.def.enemyMix,
-      },
-      rng,
-    );
+    if (this.custom) {
+      this.def = {
+        name: this.custom.name,
+        family: 'h',
+        chunkCount: 1,
+        difficultyScale: 1,
+        enemyMix: ['turret'],
+        hint: 'Playtest - R restart - ESC menu',
+        deathsPerAssistTier: 3,
+      };
+      this.palette = PALETTES[this.custom.palette] ?? PALETTES[0];
+      this.level = buildCustomLevel(this.custom.rows);
+    } else {
+      this.def = LEVELS[this.levelIndex];
+      this.palette = paletteFor(this.levelIndex);
+      this.level = buildLevel(
+        {
+          family: this.def.family,
+          chunkCount: this.def.chunkCount,
+          difficultyScale: this.def.difficultyScale,
+          enemyMix: this.def.enemyMix,
+        },
+        rng,
+      );
+    }
     this.spawnBots();
 
     const s = STEP[this.def.family];
@@ -355,7 +372,7 @@ export class GameScene extends Phaser.Scene {
     this.easedSpots.clear();
     this.assist = NO_ASSIST;
     this.cameras.main.setBackgroundColor(this.palette.bg);
-    startMusic(this.levelIndex + 1);
+    startMusic(this.custom ? 1 + (this.custom.palette % LEVELS.length) : this.levelIndex + 1);
     this.drawStaticLayers();
     this.respawn(true);
 
@@ -733,9 +750,14 @@ export class GameScene extends Phaser.Scene {
     // In a climb it hangs from the highest point reached rather than the live
     // camera, so the camera is free to follow the player down onto a lower
     // platform without quietly making every fall survivable.
-    const climbing = this.level.axis.y < -0.1;
-    const floor = climbing && this.minCamY !== Infinity ? this.minCamY : this.camY;
-    if (p.y > floor + VIRTUAL_H + 28) this.die();
+    if (this.level.freeCamera) {
+      // Hand-built: falling off the bottom of the level is the kill plane.
+      if (p.y > this.level.bounds.y + this.level.bounds.h) this.die();
+    } else {
+      const climbing = this.level.axis.y < -0.1;
+      const floor = climbing && this.minCamY !== Infinity ? this.minCamY : this.camY;
+      if (p.y > floor + VIRTUAL_H + 28) this.die();
+    }
 
     const ax = this.level.axis;
     const travelled = (p.x - this.level.startX) * ax.x + (p.y - this.level.startY) * ax.y;
@@ -805,6 +827,11 @@ export class GameScene extends Phaser.Scene {
     const p = this.player;
     const ax = this.level.axis;
     const b = this.level.bounds;
+
+    if (this.level.freeCamera) {
+      this.updateFreeCamera(dt, snap);
+      return;
+    }
 
     const horizontal = Math.abs(ax.x) > 0.1;
     const vertical = ax.y < -0.1;
@@ -883,6 +910,27 @@ export class GameScene extends Phaser.Scene {
       if (p.vx < 0) p.vx = 0;
     }
 
+    this.cameras.main.setScroll(Math.round(this.camX), Math.round(this.camY));
+  }
+
+  /**
+   * Hand-built levels can go any direction, so the camera just follows: a
+   * small lead in the direction you face, a vertical deadzone so footwork
+   * doesn't bob the view, and clamped to the level.
+   */
+  private updateFreeCamera(dt: number, snap: boolean): void {
+    const p = this.player;
+    const b = this.level.bounds;
+    const tx = clamp(p.x - VIRTUAL_W / 2 + p.facing * 18, b.x, b.x + b.w - VIRTUAL_W);
+    const d = p.y - (this.camY + VIRTUAL_H * 0.55);
+    const ty = clamp(
+      snap ? p.y - VIRTUAL_H * 0.55 : this.camY + (Math.abs(d) > 30 ? d - Math.sign(d) * 30 : 0),
+      b.y,
+      b.y + b.h - VIRTUAL_H,
+    );
+    const k = snap ? 1 : 1 - Math.pow(0.00005, dt);
+    this.camX += (tx - this.camX) * k;
+    this.camY += (ty - this.camY) * k;
     this.cameras.main.setScroll(Math.round(this.camX), Math.round(this.camY));
   }
 
@@ -1006,16 +1054,22 @@ export class GameScene extends Phaser.Scene {
     this.enterT = 0;
     this.enterFromX = this.player.x;
     this.enterFromY = this.player.y;
-    recordCompletion(this.levelIndex, this.elapsed, this.deaths);
-    const last = this.levelIndex >= LEVELS.length - 1;
+    // A playtest is not progress: nothing is recorded or unlocked.
+    if (!this.custom) recordCompletion(this.levelIndex, this.elapsed, this.deaths);
+    const last = !this.custom && this.levelIndex >= LEVELS.length - 1;
     this.showBanner(
-      last ? 'ALL CLEAR' : 'LEVEL CLEAR',
+      this.custom ? 'CLEAR!' : last ? 'ALL CLEAR' : 'LEVEL CLEAR',
       `${formatTime(this.elapsed)}   deaths ${this.deaths}`,
       1.9,
     );
   }
 
   private advance(): void {
+    // Playtests go round again, so you can keep trying the level you're editing.
+    if (this.custom) {
+      this.startLevel();
+      return;
+    }
     if (this.levelIndex >= LEVELS.length - 1) {
       this.scene.start('Menu');
       return;
@@ -1349,7 +1403,9 @@ export class GameScene extends Phaser.Scene {
     g.fillStyle(pal.player, 1);
     g.fillRect(bx, 7, bw * this.progress01, 3);
 
-    this.txtLevel.setText(upper(`${this.levelIndex + 1}. ${this.def.name}`));
+    this.txtLevel.setText(
+      upper(this.custom ? `Playtest: ${this.def.name}` : `${this.levelIndex + 1}. ${this.def.name}`),
+    );
     this.txtStats.setText(upper(`${formatTime(this.elapsed)}  x${this.deaths}`));
 
     if (this.gi.touchActive) this.drawTouchButtons(g);

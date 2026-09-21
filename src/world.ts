@@ -103,6 +103,12 @@ export interface BuiltLevel {
   totalDistance: number;
   /** World bounds in pixels. */
   bounds: Rect;
+  /**
+   * Hand-built levels: the camera simply follows the player within the bounds,
+   * and the kill plane is the bottom of the bounds. Generated levels frame by
+   * chunk instead.
+   */
+  freeCamera?: boolean;
 }
 
 export interface LevelBuildSpec {
@@ -381,5 +387,104 @@ export function buildLevel(spec: LevelBuildSpec, rng: Rng): BuiltLevel {
       w: (maxTx - minTx) * TILE,
       h: (maxTy - minTy) * TILE,
     },
+  };
+}
+
+/** Visual ground below a hand-built level's bottom row, in tiles. */
+const CUSTOM_SKIRT_TILES = 12;
+
+/**
+ * Build a level from one hand-drawn grid (see customLevels.ts). Same tile
+ * characters and rules as chunks, just one piece instead of many.
+ */
+export function buildCustomLevel(rows: string[]): BuiltLevel {
+  const h = rows.length;
+  const w = rows[0]?.length ?? 0;
+
+  // Room around the drawn area: to the sides for the camera, above for jumps,
+  // and a little below so a fall has somewhere to go before the kill plane.
+  const minTx = -2;
+  const minTy = -6;
+  const maxTx = w + 2;
+  const maxTy = h + 3;
+
+  const grid = new TileGrid(minTx, minTy, maxTx - minTx, maxTy - minTy);
+  const spikes: Rect[] = [];
+  const spawns: Spawn[] = [];
+  let start = { x: 1, y: h - 3 };
+  let exit = { x: w - 2, y: h - 3 };
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const px = x * TILE;
+      const py = y * TILE;
+      switch (rows[y][x]) {
+        case '#':
+          grid.set(x, y, 1);
+          break;
+        case '^':
+          spikes.push({ x: px + 3, y: py + 7, w: TILE - 6, h: TILE - 7 });
+          break;
+        case 'T':
+          spawns.push({ kind: 'turret', x: px + TILE / 2, y: py + TILE / 2 });
+          break;
+        case 'E':
+          start = { x, y };
+          break;
+        case 'X':
+          exit = { x, y };
+          break;
+        default:
+          break;
+      }
+    }
+  }
+
+  // Never spawn falling: a start with nothing under it gets a small ledge.
+  if (!grid.solidAt(start.x, start.y + 1)) {
+    for (let dx = -1; dx <= 1; dx++) grid.set(start.x + dx, start.y + 1, 1);
+  }
+
+  const terrain = mergeRects(grid);
+  // Ground on the bottom row carries on downward, so it reads as ground.
+  let run = -1;
+  for (let x = 0; x <= w; x++) {
+    const solid = x < w && rows[h - 1][x] === '#';
+    if (solid && run < 0) run = x;
+    else if (!solid && run >= 0) {
+      terrain.push({ x: run * TILE, y: h * TILE, w: (x - run) * TILE, h: CUSTOM_SKIRT_TILES * TILE });
+      run = -1;
+    }
+  }
+
+  const startX = start.x * TILE + TILE / 2;
+  const startY = (start.y + 1) * TILE - PLAYER_H / 2;
+  const goalX = exit.x * TILE;
+  const goalY = exit.y * TILE;
+  const goal: Rect = { x: goalX - 2, y: goalY - TILE, w: TILE + 4, h: TILE * 2 };
+
+  // Progress runs straight from the start to the portal, whichever way that is.
+  const dx = goalX + TILE / 2 - startX;
+  const dy = goalY + TILE / 2 - startY;
+  const len = Math.hypot(dx, dy) || 1;
+
+  return {
+    grid,
+    terrain,
+    spikes,
+    spawns,
+    chunks: [],
+    startX,
+    startY,
+    goal,
+    axis: { x: dx / len, y: dy / len },
+    totalDistance: len,
+    bounds: {
+      x: minTx * TILE,
+      y: minTy * TILE,
+      w: (maxTx - minTx) * TILE,
+      h: (maxTy - minTy) * TILE,
+    },
+    freeCamera: true,
   };
 }

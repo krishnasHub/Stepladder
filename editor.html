@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Foothold Level Editor</title>
+    <!-- Dev-only: served by `npm run dev` at /editor.html. Not part of any build. -->
+    <style>
+      :root {
+        --ground: #f4f2f7;
+        --surface: #ffffff;
+        --ink: #2b2835;
+        --muted: #6d687c;
+        --line: #e2dde9;
+        --accent: #c9456f;
+        --accent-ink: #ffffff;
+        --error: #c0392b;
+        --warn: #b7791f;
+        --ok: #2f7d6b;
+        --font: system-ui, 'Segoe UI', Roboto, sans-serif;
+        --mono: ui-monospace, 'Cascadia Code', Consolas, monospace;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ground: #1b1920;
+          --surface: #25222c;
+          --ink: #eeeaf4;
+          --muted: #a49eb2;
+          --line: #3a3544;
+          --accent: #f08aa8;
+          --accent-ink: #2b1720;
+          --error: #f08070;
+          --warn: #e6b45a;
+          --ok: #7fd3bd;
+        }
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body {
+        background: var(--ground);
+        color: var(--ink);
+        font: 14px/1.45 var(--font);
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+      }
+      header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px 16px;
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--line);
+        background: var(--surface);
+      }
+      header h1 { font-size: 15px; margin: 0 8px 0 0; letter-spacing: 0.02em; }
+      header h1 span { color: var(--muted); font-weight: 500; }
+      .field { display: flex; align-items: center; gap: 6px; }
+      .field label { color: var(--muted); font-size: 12px; }
+      input, select, button {
+        font: inherit;
+        color: var(--ink);
+        background: var(--ground);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 5px 8px;
+      }
+      input[type='number'] { width: 64px; font-variant-numeric: tabular-nums; }
+      #name { width: 180px; }
+      button { cursor: pointer; background: var(--surface); }
+      button:hover { border-color: var(--muted); }
+      button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+      button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+      .spacer { flex: 1; }
+      #saved { color: var(--muted); font-size: 12px; }
+
+      main { display: grid; grid-template-columns: 220px 1fr; min-height: 0; }
+      aside {
+        border-right: 1px solid var(--line);
+        background: var(--surface);
+        padding: 14px;
+        display: grid;
+        align-content: start;
+        gap: 18px;
+        overflow-y: auto;
+      }
+      aside h2 {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+        margin: 0 0 8px;
+      }
+      .tools { display: grid; gap: 4px; }
+      .tool {
+        display: grid;
+        grid-template-columns: 22px 1fr auto;
+        align-items: center;
+        gap: 8px;
+        text-align: left;
+        border-color: transparent;
+        background: transparent;
+      }
+      .tool[aria-pressed='true'] { background: var(--ground); border-color: var(--line); font-weight: 600; }
+      .tool canvas { width: 22px; height: 22px; image-rendering: pixelated; border-radius: 4px; }
+      .tool kbd { font: 11px var(--mono); color: var(--muted); }
+      .hint { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
+
+      .issues { display: grid; gap: 4px; font-size: 13px; }
+      .issue { text-align: left; border: 0; background: transparent; padding: 3px 0; display: flex; gap: 6px; }
+      .issue::before { content: '●'; font-size: 10px; line-height: 20px; }
+      .issue.error::before { color: var(--error); }
+      .issue.warning::before { color: var(--warn); }
+      .all-good { color: var(--ok); font-size: 13px; }
+      .finish {
+        font-size: 13px;
+        padding: 8px 10px;
+        border-radius: 6px;
+        background: var(--ground);
+        margin-bottom: 6px;
+        display: grid;
+        gap: 2px;
+      }
+      .finish strong { font-weight: 600; }
+      .finish small { color: var(--muted); font-variant-numeric: tabular-nums; }
+      .finish.yes strong { color: var(--ok); }
+      .finish.no strong { color: var(--error); }
+      .route-toggle { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+
+      .library { display: grid; gap: 4px; }
+      .lib-item {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        border-radius: 6px;
+      }
+      .lib-item.current { background: var(--ground); }
+      .lib-open { text-align: left; border: 0; background: transparent; padding: 5px 6px; display: grid; }
+      .lib-open small { color: var(--muted); font-variant-numeric: tabular-nums; }
+      .lib-del { border: 0; background: transparent; color: var(--muted); padding: 4px 8px; }
+      .lib-del:hover { color: var(--error); }
+
+      #stage { overflow: auto; position: relative; }
+      #canvas { display: block; margin: 16px; image-rendering: pixelated; cursor: crosshair; }
+
+      footer {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 18px;
+        padding: 6px 16px;
+        border-top: 1px solid var(--line);
+        background: var(--surface);
+        color: var(--muted);
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+      }
+      #toast {
+        position: fixed;
+        left: 50%;
+        bottom: 40px;
+        transform: translateX(-50%);
+        background: var(--ink);
+        color: var(--ground);
+        padding: 8px 14px;
+        border-radius: 8px;
+        font-size: 13px;
+        opacity: 0;
+        transition: opacity 0.2s;
+        pointer-events: none;
+      }
+      #toast.show { opacity: 1; }
+      @media (max-width: 700px) {
+        main { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+        aside { border-right: 0; border-bottom: 1px solid var(--line); max-height: 40vh; }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Foothold <span>Level Editor</span></h1>
+      <div class="field"><label for="name">Name</label><input id="name" maxlength="28" /></div>
+      <div class="field">
+        <label for="palette">Palette</label>
+        <select id="palette"></select>
+      </div>
+      <div class="field">
+        <label for="w">Size</label>
+        <input id="w" type="number" min="20" max="400" /> ×
+        <input id="h" type="number" min="12" max="120" aria-label="Height in tiles" />
+        <button id="resize">Apply</button>
+        <button id="extend-right" title="Add 10 columns on the right">+10 →</button>
+        <button id="extend-up" title="Add 10 rows on top, for climbing">+10 ↑</button>
+      </div>
+      <div class="field">
+        <label for="zoom">Zoom</label>
+        <input id="zoom" type="range" min="12" max="40" step="2" value="24" />
+      </div>
+      <span class="spacer"></span>
+      <span id="saved"></span>
+      <button id="new">New</button>
+      <button id="export">Export</button>
+      <button id="import">Import</button>
+      <input id="import-file" type="file" accept="application/json,.json" hidden />
+      <button id="play" class="primary" title="Ctrl+Enter">Play ▶</button>
+    </header>
+    <main>
+      <aside>
+        <section>
+          <h2>Tools</h2>
+          <div class="tools" id="tools"></div>
+          <p class="hint">Left-drag to paint, right-drag to erase. Ctrl+Z undo, Ctrl+Y redo.</p>
+        </section>
+        <section>
+          <h2>Checks</h2>
+          <div class="finish" id="finish" aria-live="polite"></div>
+          <label class="route-toggle"><input type="checkbox" id="show-route" checked /> Show route</label>
+          <div class="issues" id="issues"></div>
+        </section>
+        <section>
+          <h2>My levels</h2>
+          <div class="library" id="library"></div>
+        </section>
+      </aside>
+      <div id="stage"><canvas id="canvas"></canvas></div>
+    </main>
+    <footer>
+      <span id="cursor">—</span>
+      <span>Saved in this browser only · Play opens the level in the game</span>
+    </footer>
+    <div id="toast" role="status" aria-live="polite"></div>
+    <script type="module" src="/src/editor/editor.ts"></script>
+  </body>
+</html>
