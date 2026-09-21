@@ -81,9 +81,15 @@ npm run build:single   # -> dist-single/  ONE self-contained .html file
 ```
 
 **`dist-single/index.html` is the shareable artifact.** Everything — engine,
-game, levels — is inlined into a single ~1.2 MB HTML file. Email it, drop it in
-Slack, or put it on a USB stick; whoever opens it just double-clicks. No server,
-no install, no build step.
+game, levels, font, sounds — is inlined into a single ~1.3 MB HTML file. Email
+it, drop it in Slack, or put it on a USB stick; whoever gets it just
+double-clicks. No server, no install, no build step, and it works offline.
+
+> It is built as a **classic script, not an ES module**, on purpose. Browsers
+> refuse to execute `<script type="module">` from a `file://` URL — it counts
+> as a cross-origin fetch — so a module build shows a blank page to anyone who
+> double-clicks it. `vite.config.ts` emits an IIFE and strips the module
+> attributes for this reason.
 
 `dist/` is a normal static site for GitHub Pages, Netlify, or any static host.
 Asset paths are relative, so it works from a subdirectory too.
@@ -103,7 +109,7 @@ src/
   palette.ts    Four pastel colours per level.
   font.ts       Built-in 5x7 bitmap font, generated to a texture at boot.
   audio.ts      Web Audio sound, synthesised at runtime. No audio files.
-  music.ts      Generative ambient score: a theme for the title and each level.
+  music.ts      Chirpy music-box score: a theme for the title and each level.
   assist.ts     Local difficulty help at repeated failure points.
   input.ts      Keyboard + touch, one surface.
   scenes/       Menu and Game.
