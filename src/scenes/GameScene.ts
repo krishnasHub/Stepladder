@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { CHUNK_H, STEP } from '../chunks';
 import { Assist, NO_ASSIST, assistFor } from '../assist';
-import { playDeath, resumeAudio, toggleMuted } from '../audio';
+import { playDeath, playDoubleJump, resumeAudio, toggleMuted } from '../audio';
 import { Bot, ProjectilePool, createBot } from '../entities';
 import { pixelText, upper } from '../font';
 import { GameInput, TOUCH_BUTTONS } from '../input';
@@ -658,7 +658,10 @@ export class GameScene extends Phaser.Scene {
     p.step(dt, this.gi, grid, this.assist);
 
     if (p.events.landed) this.burst(p.x, p.y + PLAYER_H / 2, 4, this.palette.env, 40);
-    if (p.events.doubleJumped) this.burst(p.x, p.y + PLAYER_H / 2, 6, this.palette.player, 55);
+    if (p.events.doubleJumped) {
+      this.burst(p.x, p.y + PLAYER_H / 2, 6, this.palette.player, 55);
+      playDoubleJump();
+    }
 
     // A jump "lands" successfully when it ends grounded rather than dead. After
     // a run of them, the player occasionally looks pleased with itself.
@@ -1083,6 +1086,29 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * The one expression showing right now. Precedence, highest first:
+   *
+   *   stressed  something is going wrong this instant — always wins
+   *   happy     a short earned celebration, worth not swallowing
+   *   focused   committed movement
+   *   thinking  deliberately stopped
+   *   scared    a standing mood, not an event — so it yields to all of them
+   *
+   * Nervousness is LAST on purpose. It is true for a whole region rather than
+   * a moment, so if the player is sprinting through that region or has stopped
+   * to think in it, those say more about what they are doing right now. It
+   * shows only when nothing else is.
+   */
+  private currentFace(): 'stressed' | 'happy' | 'focused' | 'thinking' | 'scared' | 'default' {
+    if (this.stressTimer > 0) return 'stressed';
+    if (this.heartTimer > 0) return 'happy';
+    if (this.runTimer >= FOCUS_AFTER) return 'focused';
+    if (this.idleTimer >= IDLE_AFTER) return 'thinking';
+    if (this.scared) return 'scared';
+    return 'default';
+  }
+
   /** Distant figures. Redrawn each frame; the platforms behind them are static. */
   private drawBlobs(): void {
     const pal = this.palette;
@@ -1145,17 +1171,23 @@ export class GameScene extends Phaser.Scene {
         g.fillRect(t.x - 3, t.y - 4, 6, 8);
       }
 
+      // Exactly one expression is ever active. Anything that reads as a mood —
+      // the shiver, the thought dots, the sweat bead, the eye itself — hangs
+      // off this single value, so two of them can never appear at once.
+      const face = this.currentFace();
+
       const w = PLAYER_W * p.scaleX;
       const h = PLAYER_H * p.scaleY;
-      // A 1px shiver while nervous. Visual only — physics never sees it.
-      const shiver = this.scared ? Math.floor(this.elapsed * 14) % 2 : 0;
+      // A 1px shiver, only while nervous is the face actually showing.
+      // Visual only — physics never sees it.
+      const shiver = face === 'scared' ? Math.floor(this.elapsed * 14) % 2 : 0;
       const px = p.x - w / 2 + shiver;
       const py = p.y + PLAYER_H / 2 - h; // anchored at the feet
       g.fillStyle(pal.player, 1);
       g.fillRoundedRect(px, py, w, h, 2);
 
-      // Thought dots while idle, outside the body so they need the body colour.
-      if (this.idleTimer >= IDLE_AFTER) {
+      // Thought dots, outside the body so they need the body colour.
+      if (face === 'thinking') {
         const phase = (this.idleTimer % IDLE_CYCLE) / IDLE_CYCLE;
         const shown = phase < 0.22 ? 1 : phase < 0.44 ? 2 : phase < 0.85 ? 3 : 0;
         const bx = Math.round(p.facing > 0 ? px + w * 0.5 : px + w * 0.5 - IDLE_BOX_W);
@@ -1166,19 +1198,19 @@ export class GameScene extends Phaser.Scene {
           g.fillRect(bx + mx, by + dy, size, size);
         }
       }
-      // Facing notch, in the background colour, so it reads as an eye — or a
-      // heart, when a run of clean landings has left the player pleased.
+
+      // The face itself, in the background colour so it reads as a cut-out.
       g.fillStyle(pal.bg, 1);
       const ex = Math.round(p.facing > 0 ? px + w - 4 : px + 2);
-      if (this.stressTimer > 0) {
+      if (face === 'stressed') {
         // Squint: a flat line reads as a screwed-shut eye at this size.
         g.fillRect(ex - 1, Math.round(py + 4), 3, 1);
-      } else if (this.heartTimer === 0 && this.scared) {
-        // Wide eyes. Two of them is the whole trick — every other expression
-        // here uses one mark, so a pair reads instantly as startled.
-        g.fillRect(Math.round(px + w * 0.18), Math.round(py + 3), 2, 2);
-        g.fillRect(Math.round(px + w * 0.58), Math.round(py + 3), 2, 2);
-      } else if (this.heartTimer === 0 && this.runTimer >= FOCUS_AFTER) {
+      } else if (face === 'happy') {
+        // Keep the whole heart on the body, on whichever side the eye is.
+        const hx = Math.round(p.facing > 0 ? px + w - HEART_W - 1 : px + 1);
+        const hy = Math.round(py + 2);
+        for (const [dx, dy] of HEART_PIXELS) g.fillRect(hx + dx, hy + dy, 1, 1);
+      } else if (face === 'focused') {
         // Streak behind a forward-set eye, mirrored to face travel.
         const fx = Math.round(p.facing > 0 ? px + w - FOCUS_W - 1 : px + 1);
         const fy = Math.round(py + 3);
@@ -1186,17 +1218,18 @@ export class GameScene extends Phaser.Scene {
           const mx = p.facing > 0 ? dx : FOCUS_W - 1 - dx;
           g.fillRect(fx + mx, fy + dy, 1, 1);
         }
-      } else if (this.heartTimer > 0) {
-        // Keep the whole heart on the body, on whichever side the eye is.
-        const hx = Math.round(p.facing > 0 ? px + w - HEART_W - 1 : px + 1);
-        const hy = Math.round(py + 2);
-        for (const [dx, dy] of HEART_PIXELS) g.fillRect(hx + dx, hy + dy, 1, 1);
+      } else if (face === 'scared') {
+        // Wide eyes. Two of them is the whole trick — every other expression
+        // here uses one mark, so a pair reads instantly as startled.
+        g.fillRect(Math.round(px + w * 0.18), Math.round(py + 3), 2, 2);
+        g.fillRect(Math.round(px + w * 0.58), Math.round(py + 3), 2, 2);
       } else {
+        // 'thinking' keeps the plain eye; the dots above carry the meaning.
         g.fillRect(ex, py + 3, 2, 2);
       }
 
       // Sweat bead, off the trailing edge so it never sits on the face.
-      if (this.stressTimer > 0) {
+      if (face === 'stressed') {
         const phase = (this.elapsed * 2.2) % 1;
         const sx = Math.round(p.facing > 0 ? px - 3 : px + w + 1);
         const sy = Math.round(py + phase * 7);
@@ -1233,7 +1266,7 @@ export class GameScene extends Phaser.Scene {
         `bots ${this.bots.filter((b) => b.alive).length}  parts ${this.particles.length}`,
         `chunks ${this.level.chunks.length}  rects ${this.level.terrain.length}`,
         `assist ${this.assist.tier}  spots ${this.deathSpots.size}  eased ${this.easedSpots.size}`,
-        `idle ${this.idleTimer.toFixed(1)}  run ${this.runTimer.toFixed(1)}  scared ${this.scared ? 'Y' : 'N'}`,
+        `face ${this.currentFace()}  idle ${this.idleTimer.toFixed(1)}  scared ${this.scared ? 'Y' : 'N'}`,
       ]
         .join('\n')
         .toUpperCase(),

@@ -77,6 +77,43 @@ export function resumeAudio(): void {
 }
 
 /**
+ * The double jump: a short blip rising the way the move does.
+ *
+ * This one earns a sound more than most. Every other action lands you on
+ * something, and the contact sells itself; the double jump happens in mid-air
+ * with nothing to hit, so the audio is the clearest confirmation that it
+ * actually fired rather than being eaten.
+ *
+ * It also fires constantly, so it is deliberately tiny — a tenth of a second
+ * and well under half the volume of the death sound. A generous double-jump
+ * sound would be exhausting within a minute.
+ */
+export function playDoubleJump(): void {
+  const c = ensure();
+  if (!c || !master || muted) return;
+  try {
+    const t = c.currentTime;
+
+    const osc = c.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(520, t);
+    osc.frequency.exponentialRampToValueAtTime(940, t + 0.07);
+
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.07, t + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+
+    osc.connect(g);
+    g.connect(master);
+    osc.start(t);
+    osc.stop(t + 0.13);
+  } catch {
+    /* never let a sound take the game down */
+  }
+}
+
+/**
  * The death sound: a soft square gliding down a couple of octaves with a puff
  * on the front. Deflating, not punishing — you are about to retry in half a
  * second, so it should not scold.

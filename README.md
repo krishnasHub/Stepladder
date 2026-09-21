@@ -26,16 +26,38 @@ See [DESIGN.md](DESIGN.md) for the full design.
 
 ## Run it
 
+One script installs what's missing, starts the server, and opens the game.
+
+| | |
+|---|---|
+| Windows | double-click **`start.bat`**, or `.\start.ps1` |
+| macOS / Linux | `./start.sh` |
+
+**Ctrl-C stops the server.** Vite runs in the foreground, so the interrupt
+reaches it directly and nothing is left holding the port.
+
+Defaults to port 5199. Pass another if it's taken:
+
+```bash
+./start.sh 5200            # or:  start.bat 5200
+.\start.ps1 -Port 5200
+```
+
+Set `NO_OPEN=1` (or `-NoOpen`) to start the server without launching a browser.
+
+> On Windows, Ctrl-C makes cmd.exe ask *"Terminate batch job (Y/N)?"*. That's
+> just cmd tidying up — the server is already stopped by the time you see it.
+
+Or do it by hand:
+
 ```bash
 npm install
 npm run dev
 ```
 
-Then open the URL it prints (default <http://localhost:5173>).
-
-> If that port is already serving a different app, an old service worker from a
-> previous project may be intercepting it. Run on another port:
-> `npx vite --port 5199`
+> The default Vite port is 5173. If that's already serving a different app, an
+> old service worker from another project may be intercepting it — use another
+> port.
 
 ## Controls
 

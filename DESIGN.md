@@ -357,10 +357,20 @@ favor the player.
   |---|---|---|
   | Stressed | flat squint + sweat bead | mashing jump with nothing to spend |
   | Delighted | 5×4 heart | 5 clean landings, then ~1 in 4–5 |
-  | Nervous | **two** wide eyes + 1px shiver | within 170px of a spot that killed them 3× |
   | Focused | streak + forward eye | 0.5s above 82% of top speed, one direction |
   | Thinking | "..." rising off the head | standing still for 5s |
+  | Nervous | **two** wide eyes + 1px shiver | within 170px of a spot that killed them 3× |
   | Default | single 2×2 dot | — |
+
+  Exactly one is ever active. `currentFace()` resolves the winner, and the eye,
+  the thought dots, the sweat bead and the shiver all hang off that one value,
+  so two can never appear at once — by construction rather than by discipline.
+
+  **Nervous is last on purpose.** It is true of a whole *region*, while every
+  other state is true of a *moment*, and a moment says more about what the
+  player is doing right now. So sprinting through a feared gap shows focus, and
+  stopping to think in one shows thinking; the wide eyes appear only when
+  nothing else is happening.
 
   The nervous threshold matches where assistance begins, so the face and the
   help agree: the player looks worried at exactly the gap the game has decided
@@ -446,7 +456,7 @@ Android Studio + $25 one-time. No code depends on this.
   20–40s). Ramping 45s → 90s; re-measure at M4 with a controller in hand.
 - Scoring / time-attack layer? Not planned. Determinism makes leaderboards and
   ghost replays cheap to add later if wanted.
-- Audio: only the death sound exists so far. It is **synthesised at runtime**
+- Audio: death and double jump so far. It is **synthesised at runtime**
   (`audio.ts`) rather than loaded, so the single-file build stays a single file
   and there is nothing that can fail to load. A soft square gliding down two
   octaves with a noise puff on the front — deflating rather than scolding,
@@ -457,4 +467,9 @@ Android Studio + $25 one-time. No code depends on this.
     simulated Web Audio failure neither propagates nor stops the game.
   - `M` mutes, persisted. Muted creates no audio nodes at all rather than
     zeroing a gain.
-  - Still open: jump, stomp and level-complete sounds, and music.
+  - The **double jump** gets a 0.1s rising blip at well under half the death
+    sound's volume. It earns one more than most actions: everything else lands
+    on something and the contact sells itself, while the double jump happens in
+    mid-air with nothing to hit, so audio is the clearest confirmation it fired
+    rather than being eaten. It also repeats constantly, hence the restraint.
+  - Still open: stomp and level-complete sounds, and music.
