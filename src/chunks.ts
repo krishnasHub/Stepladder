@@ -299,9 +299,13 @@ const VERTICAL: ChunkDef[] = [
     id: 'v_turrets',
     family: 'v',
     difficulty: 2,
+    // The top ledge sits LEFT of the upper turret, not over it. It used to hang
+    // directly above, leaving 2 tiles of headroom: the turret could not be
+    // stomped, and the only way up was a frame-tight coyote jump off the
+    // ledge's corner (~5% success with 50ms of timing error).
     rows: [
-      '..........X.............',
-      '........####............',
+      '.....X..................',
+      '....####................',
       '........................',
       '..........T.............',
       '.........####...........',
@@ -544,7 +548,36 @@ export function validateChunks(): ChunkIssue[] {
       if (!hasBot) issues.push({ id: c.id, problem: 'botGated but contains no bots' });
     }
 
+    issues.push(...checkBotHeadroom(c));
     if (c.family === 'v') issues.push(...checkVerticalLadder(c, e));
+  }
+  return issues;
+}
+
+/**
+ * Clear rows needed above a standing bot: one for the player's body, one to
+ * fall into it from, one for the bounce. Less than that and the bot cannot be
+ * stomped, which in a game where bots are rungs can turn it into a wall.
+ */
+const BOT_HEADROOM_TILES = 3;
+
+/** Every standing bot (turret, walker) must have open sky above it to be stomped. */
+function checkBotHeadroom(c: ChunkDef): ChunkIssue[] {
+  const issues: ChunkIssue[] = [];
+  for (let y = 0; y < CHUNK_H; y++) {
+    for (let x = 0; x < CHUNK_W; x++) {
+      const ch = c.rows[y][x];
+      if (ch !== 'T' && ch !== 'W') continue;
+      for (let k = 1; k <= BOT_HEADROOM_TILES && y - k >= 0; k++) {
+        if (c.rows[y - k][x] === '#') {
+          issues.push({
+            id: c.id,
+            problem: `bot at (${x},${y}) has a ceiling ${k - 1} tile(s) above it; it needs ${BOT_HEADROOM_TILES} clear to be stomped`,
+          });
+          break;
+        }
+      }
+    }
   }
   return issues;
 }
@@ -584,6 +617,26 @@ function platformsOf(rows: string[], includeFlyers: boolean): Platform[] {
 }
 
 /**
+ * Is there a column of `lower`, outside `upper`'s span, with clear air from
+ * standing height up to `upper`'s surface and no bot standing in it?
+ */
+function hasLaunchColumn(rows: string[], lower: Platform, upper: Platform): boolean {
+  for (let x = Math.max(0, lower.x0); x <= Math.min(CHUNK_W - 1, lower.x1); x++) {
+    if (x >= upper.x0 && x <= upper.x1) continue;
+    let clear = true;
+    for (let y = upper.y; y < lower.y; y++) {
+      const ch = rows[y][x];
+      if (ch === '#' || ch === 'T' || ch === 'W') {
+        clear = false;
+        break;
+      }
+    }
+    if (clear) return true;
+  }
+  return false;
+}
+
+/**
  * Walk the climb bottom-up and confirm every rung is actually reachable from
  * the one below it. This is the check that catches an unclimbable chunk before
  * a player ever loads it.
@@ -609,6 +662,18 @@ function checkVerticalLadder(c: ChunkDef, entry: { x: number; y: number }): Chun
       issues.push({
         id: c.id,
         problem: `rung at row ${p.y} is unreachable: ${dy} up / ${dx} across (max ${horizontalReachAt(dy, true).toFixed(1)} across at that height)`,
+      });
+    }
+
+    // A rung that hangs over the one below is a ceiling: you can only go up
+    // past its edge. Being within reach is not enough if no part of the lower
+    // rung sticks out from under it with clear air above, free of bots.
+    // Solid ledges only: a flyer rung moves, so where it is is not fixed.
+    const solid = (q: Platform): boolean => q.y < CHUNK_H && c.rows[q.y][q.x0] === '#';
+    if (dx === 0 && solid(p) && solid(cur) && !hasLaunchColumn(c.rows, cur, p)) {
+      issues.push({
+        id: c.id,
+        problem: `rung at row ${p.y} hangs over row ${cur.y} with no clear column beside it to jump up through`,
       });
     }
     cur = p;
