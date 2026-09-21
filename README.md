@@ -103,6 +103,7 @@ src/
   palette.ts    Four pastel colours per level.
   font.ts       Built-in 5x7 bitmap font, generated to a texture at boot.
   audio.ts      Web Audio sound, synthesised at runtime. No audio files.
+  music.ts      Generative ambient score: a theme for the title and each level.
   assist.ts     Local difficulty help at repeated failure points.
   input.ts      Keyboard + touch, one surface.
   scenes/       Menu and Game.
@@ -150,5 +151,5 @@ A useful side effect: any bug reproduces from its seed.
 ## Status
 
 MVP. Playable end to end. Art is programmatic shapes rather than pixel-art
-sprites, and the only sound so far is the death sound. See the milestone table
-in DESIGN.md.
+sprites. Sound is death, double jump, and a generative ambient score. See the
+milestone table in DESIGN.md.

@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import * as audio from './audio';
 import { validateChunks } from './chunks';
 import { BootScene } from './scenes/BootScene';
 import { GameScene } from './scenes/GameScene';
@@ -28,5 +29,14 @@ const game = new Phaser.Game({
   scene: [BootScene, MenuScene, GameScene],
 });
 
-// Dev handle for debugging from the console. Stripped by nothing, but harmless.
-if (import.meta.env.DEV) (window as unknown as { __game: Phaser.Game }).__game = game;
+// Dev handles for debugging from the console.
+//
+// `__audio` matters more than it looks: importing './audio' from the console
+// gives you a SECOND copy of the module, because Vite serves the app's copy
+// with an HMR cache-busting query. Reading mute or music state off that copy
+// reports on a module nothing is actually using. This is the real one.
+if (import.meta.env.DEV) {
+  const w = window as unknown as { __game: Phaser.Game; __audio: typeof audio };
+  w.__game = game;
+  w.__audio = audio;
+}

@@ -472,4 +472,21 @@ Android Studio + $25 one-time. No code depends on this.
     on something and the contact sells itself, while the double jump happens in
     mid-air with nothing to hit, so audio is the clearest confirmation it fired
     rather than being eaten. It also repeats constantly, hence the restraint.
-  - Still open: stomp and level-complete sounds, and music.
+  - **Background music** (`music.ts`): a generative ambient score, one theme
+    for the title and one per level. Designed to be ignorable, which drove
+    every choice — no repeating melody (a hook is a thing attention catches
+    on), no beat, multi-second attack and release so nothing ever starts,
+    flat dynamics, pentatonic and modal scales so a randomly chosen note can
+    never clash, and low-passed timbres.
+    - Two voices: a slow pad chord crossfading every 12-18s, and single chimes
+      at irregular gaps of 6-18s.
+    - Themes differ by root, mode, timbre and brightness, but stay the same
+      kind of music, so moving between levels is never a jolt. Theme changes
+      let the current chord die on its own release instead of cutting.
+    - Verified by rendering each theme through an OfflineAudioContext and
+      measuring the samples: all seven audible, peaks within 5% of each other
+      (0.064-0.067) and comfortably under the 0.16 sound-effect peak.
+    - An earlier version scaled the pad attack with the chord length, which
+      left the slower themes permanently mid-ramp and 5.6x quieter than the
+      fast ones. Capping the attack fixed the spread from 5.6x to 1.05x.
+  - Still open: stomp and level-complete sounds.

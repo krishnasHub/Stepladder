@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { CHUNK_H, STEP } from '../chunks';
 import { Assist, NO_ASSIST, assistFor } from '../assist';
-import { playDeath, playDoubleJump, resumeAudio, toggleMuted } from '../audio';
+import { playDeath, playDoubleJump, resumeAudio, startMusic, toggleMuted } from '../audio';
 import { Bot, ProjectilePool, createBot } from '../entities';
 import { pixelText, upper } from '../font';
 import { GameInput, TOUCH_BUTTONS } from '../input';
@@ -375,6 +375,7 @@ export class GameScene extends Phaser.Scene {
     this.easedSpots.clear();
     this.assist = NO_ASSIST;
     this.cameras.main.setBackgroundColor(this.palette.bg);
+    startMusic(this.levelIndex + 1);
     this.drawStaticLayers();
     this.respawn(true);
 

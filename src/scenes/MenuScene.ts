@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { resumeAudio, toggleMuted } from '../audio';
+import { resumeAudio, startMusic, toggleMuted } from '../audio';
 import { pixelText } from '../font';
 import { LEVELS, RUN_SEED, formatTime, loadProgress } from '../levels';
 import { PALETTES } from '../palette';
@@ -27,9 +27,20 @@ export class MenuScene extends Phaser.Scene {
     const pal = PALETTES[0];
     this.cameras.main.setBackgroundColor(pal.bg);
 
+    // Phaser reuses the scene instance across restarts, so create() runs again
+    // on the same object. Without this, every trip back from the game pushes a
+    // second set of rows onto the old ones and refresh() then updates destroyed
+    // objects from the previous visit — which is exactly what made the arrow
+    // keys look dead after pressing Esc.
+    this.rows.length = 0;
+    this.carets.length = 0;
+
     const progress = loadProgress();
     this.unlocked = progress.unlocked;
-    this.selected = Math.min(this.unlocked, LEVELS.length - 1);
+    // Start on the first level not yet beaten. Starting on the LAST unlocked
+    // one left Down with nowhere to go, which reads as the keys not working.
+    const firstUnbeaten = LEVELS.findIndex((_, i) => i <= this.unlocked && !progress.best[i]);
+    this.selected = firstUnbeaten >= 0 ? firstUnbeaten : Math.min(this.unlocked, LEVELS.length - 1);
 
     const g = this.add.graphics();
     g.fillStyle(pal.bgAccent, 0.55);
@@ -99,6 +110,7 @@ export class MenuScene extends Phaser.Scene {
       originX: 0.5,
     }).setAlpha(0.75);
 
+    startMusic(0);
     this.input.once('pointerdown', resumeAudio);
     this.input.keyboard?.once('keydown', resumeAudio);
     this.input.keyboard?.on('keydown-M', () => toggleMuted());
@@ -114,9 +126,15 @@ export class MenuScene extends Phaser.Scene {
     this.refresh();
   }
 
+  /**
+   * Wraps, and moves over locked rows too. Clamping to the unlocked range meant
+   * a key press could do nothing at all — which is indistinguishable from the
+   * key not working. `start()` still refuses to launch a locked level, so the
+   * caret landing there just shows you what you have not reached yet.
+   */
   private move(d: number): void {
-    const max = Math.min(this.unlocked, LEVELS.length - 1);
-    this.selected = Phaser.Math.Clamp(this.selected + d, 0, max);
+    const n = LEVELS.length;
+    this.selected = (this.selected + d + n) % n;
     this.refresh();
   }
 
@@ -124,8 +142,10 @@ export class MenuScene extends Phaser.Scene {
     const pal = PALETTES[0];
     this.rows.forEach((t, i) => {
       const on = i === this.selected;
+      const locked = i > this.unlocked;
       this.carets[i].setVisible(on);
-      if (i <= this.unlocked) t.setTint(on ? pal.player : pal.ink);
+      this.carets[i].setTint(locked ? pal.env : pal.player);
+      t.setTint(locked ? pal.env : on ? pal.player : pal.ink);
     });
   }
 

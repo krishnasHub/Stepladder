@@ -1,3 +1,4 @@
+import { Music } from './music';
 import { Rng } from './rng';
 
 /**
@@ -38,6 +39,11 @@ export function toggleMuted(): boolean {
     /* private window: the preference just will not persist */
   }
   if (master) master.gain.value = muted ? 0 : 1;
+  // Muting the master gain would be silent either way, but the scheduler would
+  // keep building inaudible oscillators. Stop it, so muted really means no
+  // audio work at all — the same promise the sound effects make.
+  if (muted) stopTimer();
+  else if (musicWanted) startTimer();
   return muted;
 }
 
@@ -74,6 +80,57 @@ function ensure(): AudioContext | null {
 export function resumeAudio(): void {
   const c = ensure();
   if (c && c.state === 'suspended') void c.resume();
+  // The first gesture is what unblocks the context, so this is where music
+  // requested earlier actually gets to start.
+  if (musicWanted) startTimer();
+}
+
+// ---------------------------------------------------------------------------
+// Background music — see music.ts for the design and the themes.
+// ---------------------------------------------------------------------------
+
+const music = new Music();
+let musicWanted = false;
+let musicTheme = 0;
+
+function startTimer(): void {
+  const c = ensure();
+  if (!c || !master || !musicWanted || muted) return;
+  music.attach({ ctx: c, out: master });
+  music.setTheme(musicTheme);
+  music.start();
+}
+
+function stopTimer(): void {
+  music.stop();
+}
+
+/** Start or switch the soundtrack. 0 is the title; 1..6 are the levels. */
+export function startMusic(theme = 0): void {
+  musicTheme = theme;
+  musicWanted = true;
+  if (music.running) music.setTheme(theme);
+  startTimer();
+}
+
+export function stopMusic(): void {
+  musicWanted = false;
+  stopTimer();
+}
+
+/** Exposed for tests and the debug overlay. */
+export function musicState() {
+  return { running: music.running, theme: music.themeName, wanted: musicWanted };
+}
+
+if (typeof document !== 'undefined') {
+  // A hidden tab throttles timers well below the lookahead, which would leave
+  // audible gaps. Silence beats stuttering, and a backgrounded game should be
+  // quiet anyway.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopTimer();
+    else if (musicWanted) startTimer();
+  });
 }
 
 /**
