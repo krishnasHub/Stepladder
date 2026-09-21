@@ -200,6 +200,15 @@ interface BgBlob {
   scale: number;
 }
 
+/**
+ * Squeezing into the exit portal: a crouch, then pulled to the centre while
+ * stretching thin until the player slips inside. Plays within the level-clear
+ * pause, so it costs the player no time.
+ */
+const ENTER_TIME = 0.6;
+/** Fraction of ENTER_TIME spent crouching before the pull begins. */
+const ENTER_CROUCH = 0.2;
+
 /** Blobs per layer, nearest layer last. The near layer gets none. */
 const BG_BLOBS_PER_LAYER = [4, 3, 0] as const;
 
@@ -245,6 +254,10 @@ export class GameScene extends Phaser.Scene {
   private deaths = 0;
   private elapsed = 0;
   private progress01 = 0;
+  /** Time since touching the exit portal, and where the player was then. */
+  private enterT = 0;
+  private enterFromX = 0;
+  private enterFromY = 0;
 
   private camX = 0;
   private camY = 0;
@@ -646,6 +659,13 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     if (this.state === 'complete') {
+      const before = this.enterT;
+      this.enterT += dt;
+      // The moment the player disappears, the portal pops.
+      if (before < ENTER_TIME && this.enterT >= ENTER_TIME) {
+        const goal = this.level.goal;
+        this.burst(goal.x + goal.w / 2, goal.y + goal.h / 2, 30, this.palette.player, 120);
+      }
       this.stateTimer -= dt;
       if (this.stateTimer <= 0) this.advance();
       return;
@@ -1002,7 +1022,9 @@ export class GameScene extends Phaser.Scene {
     this.state = 'complete';
     this.stateTimer = 1.9;
     this.progress01 = 1;
-    this.burst(this.player.x, this.player.y, 30, this.palette.player, 120);
+    this.enterT = 0;
+    this.enterFromX = this.player.x;
+    this.enterFromY = this.player.y;
     recordCompletion(this.levelIndex, this.elapsed, this.deaths);
     const last = this.levelIndex >= LEVELS.length - 1;
     this.showBanner(
@@ -1143,12 +1165,45 @@ export class GameScene extends Phaser.Scene {
     this.drawBlobs();
 
     // --- Goal --------------------------------------------------------------
+    // A portal: a hollow oval ring with motes spiralling into a bright core.
+    // It used to be a solid pulsing block, which is exactly what a bot is, and
+    // on palettes where the player hue sits near the hazard hue (Slate, Mint)
+    // the exit read as one more enemy. The shape now does the separating —
+    // nothing else in the game is round, hollow, or moves inward.
     const goal = this.level.goal;
-    const pulse = 0.5 + 0.5 * Math.sin(this.elapsed * 5);
-    g.fillStyle(blend(pal.player, 0xffffff, pulse * 0.5), 1);
-    g.fillRect(goal.x + 3, goal.y, goal.w - 6, goal.h);
+    const entering = this.state === 'complete';
+    // `elapsed` stops at the finish (it is the level time), so the portal keeps
+    // turning on the entry clock instead.
+    const at = this.elapsed + (entering ? this.enterT : 0);
+    // A brief flare as the player slips inside.
+    const flare = entering ? clamp(1 - Math.abs(this.enterT - ENTER_TIME) / 0.25, 0, 1) : 0;
+    const pulse = Math.max(0.5 + 0.5 * Math.sin(at * 5), flare);
+    const gcx = goal.x + goal.w / 2;
+    const gcy = goal.y + goal.h / 2;
+    const gw = goal.w - 2 + flare * 4;
+    const gh = goal.h + flare * 4;
     g.fillStyle(pal.player, 1);
-    g.fillRect(goal.x + 1, goal.y + goal.h - 3, goal.w - 2, 3);
+    g.fillEllipse(gcx, gcy, gw, gh);
+    g.fillStyle(blend(pal.player, 0xffffff, 0.2 + pulse * 0.3), 1);
+    g.fillEllipse(gcx, gcy, gw - 2, gh - 2);
+    // The interior is lighter than the ring, so it reads as an opening
+    // rather than a filled shape.
+    g.fillStyle(blend(pal.bg, 0xffffff, 0.5), 1);
+    g.fillEllipse(gcx, gcy, gw - 6, gh - 6);
+    g.fillStyle(blend(pal.player, 0xffffff, 0.75 - pulse * 0.25), 1);
+    g.fillEllipse(gcx, gcy, 4 + pulse * 2, 8 + pulse * 3);
+    // Motes drift inward along a tightening spiral and restart at the rim.
+    g.fillStyle(pal.player, 1);
+    const motes = 6;
+    for (let i = 0; i < motes; i++) {
+      const t = (at * 0.7 + i / motes) % 1;
+      const r = 1 - t;
+      const a = (i / motes) * Math.PI * 2 + at * 2.5 + t * 3;
+      const size = r > 0.45 ? 2 : 1;
+      const mx = gcx + Math.cos(a) * (gw / 2 - 4) * r;
+      const my = gcy + Math.sin(a) * (gh / 2 - 4) * r;
+      g.fillRect(Math.round(mx - size / 2), Math.round(my - size / 2), size, size);
+    }
 
     // --- Projectiles -------------------------------------------------------
     g.fillStyle(pal.hazard, 1);
@@ -1170,8 +1225,11 @@ export class GameScene extends Phaser.Scene {
 
     // --- Player trail ------------------------------------------------------
     const p = this.player;
-    if (p.alive) {
-      for (const t of p.trail) {
+    // Squeezing into the portal: `through` is 0 at contact, 1 once inside.
+    const through = entering ? clamp(this.enterT / ENTER_TIME, 0, 1) : 0;
+    if (p.alive && through < 1) {
+      // The trail froze with the simulation at the finish, so hide it.
+      if (!entering) for (const t of p.trail) {
         const a = (t.life / 0.22) * 0.3;
         g.fillStyle(pal.player, a);
         g.fillRect(t.x - 3, t.y - 4, 6, 8);
@@ -1180,17 +1238,46 @@ export class GameScene extends Phaser.Scene {
       // Exactly one expression is ever active. Anything that reads as a mood —
       // the shiver, the thought dots, the sweat bead, the eye itself — hangs
       // off this single value, so two of them can never appear at once.
-      const face = this.currentFace();
+      let face = this.currentFace();
 
-      const w = PLAYER_W * p.scaleX;
-      const h = PLAYER_H * p.scaleY;
+      let w = PLAYER_W * p.scaleX;
+      let h = PLAYER_H * p.scaleY;
       // A 1px shiver, only while nervous is the face actually showing.
       // Visual only — physics never sees it.
       const shiver = face === 'scared' ? Math.floor(this.elapsed * 14) % 2 : 0;
-      const px = p.x - w / 2 + shiver;
-      const py = p.y + PLAYER_H / 2 - h; // anchored at the feet
+      let px = p.x - w / 2 + shiver;
+      let py = p.y + PLAYER_H / 2 - h; // anchored at the feet
+
+      if (entering) {
+        // Crouch, then get pulled to the portal's centre, stretching tall and
+        // thin until the last sliver slips inside. Centre-anchored: there is
+        // no floor to stand on inside a portal.
+        face = 'default';
+        let sx: number;
+        let sy: number;
+        if (through < ENTER_CROUCH) {
+          const a = through / ENTER_CROUCH;
+          sx = 1 + 0.3 * a;
+          sy = 1 - 0.25 * a;
+        } else {
+          const b = (through - ENTER_CROUCH) / (1 - ENTER_CROUCH);
+          sx = 1.3 - 1.2 * b * b;
+          sy = b < 0.5 ? 0.75 + 1.5 * b : 1.5 - 2.4 * (b - 0.5);
+        }
+        const pull = clamp((through - ENTER_CROUCH * 0.5) / 0.55, 0, 1);
+        const ease = 1 - Math.pow(1 - pull, 3);
+        const cx = this.enterFromX + (gcx - this.enterFromX) * ease;
+        const cy = this.enterFromY + (gcy - this.enterFromY) * ease;
+        w = Math.max(1, PLAYER_W * sx);
+        h = Math.max(1, PLAYER_H * sy);
+        px = cx - w / 2;
+        py = cy - h / 2;
+      }
+
       g.fillStyle(pal.player, 1);
-      g.fillRoundedRect(px, py, w, h, 2);
+      g.fillRoundedRect(px, py, w, h, Math.min(2, w / 2, h / 2));
+      // Too thin to carry a face.
+      const faceShown = w >= 5;
 
       // Thought dots, outside the body so they need the body colour.
       if (face === 'thinking') {
@@ -1229,7 +1316,7 @@ export class GameScene extends Phaser.Scene {
         // here uses one mark, so a pair reads instantly as startled.
         g.fillRect(Math.round(px + w * 0.18), Math.round(py + 3), 2, 2);
         g.fillRect(Math.round(px + w * 0.58), Math.round(py + 3), 2, 2);
-      } else {
+      } else if (faceShown) {
         // 'thinking' keeps the plain eye; the dots above carry the meaning.
         g.fillRect(ex, py + 3, 2, 2);
       }
