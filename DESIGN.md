@@ -472,21 +472,30 @@ Android Studio + $25 one-time. No code depends on this.
     on something and the contact sells itself, while the double jump happens in
     mid-air with nothing to hit, so audio is the clearest confirmation it fired
     rather than being eaten. It also repeats constantly, hence the restraint.
-  - **Background music** (`music.ts`): a generative ambient score, one theme
-    for the title and one per level. Designed to be ignorable, which drove
-    every choice — no repeating melody (a hook is a thing attention catches
-    on), no beat, multi-second attack and release so nothing ever starts,
-    flat dynamics, pentatonic and modal scales so a randomly chosen note can
-    never clash, and low-passed timbres.
-    - Two voices: a slow pad chord crossfading every 12-18s, and single chimes
-      at irregular gaps of 6-18s.
-    - Themes differ by root, mode, timbre and brightness, but stay the same
-      kind of music, so moving between levels is never a jolt. Theme changes
-      let the current chord die on its own release instead of cutting.
-    - Verified by rendering each theme through an OfflineAudioContext and
-      measuring the samples: all seven audible, peaks within 5% of each other
-      (0.064-0.067) and comfortably under the 0.16 sound-effect peak.
-    - An earlier version scaled the pad attack with the chord length, which
-      left the slower themes permanently mid-ramp and 5.6x quieter than the
-      fast ones. Capping the attack fixed the spread from 5.6x to 1.05x.
+  - **Background music** (`music.ts`): a light, chirpy music-box score, one
+    theme for the title and one per level. Plucky notes (fast attack, short
+    decay), major pentatonic only, a steady bass with offbeat chord stabs, the
+    melody up an octave, and an open filter.
+    - **The first attempt was ambient and came out creepy**, which is worth
+      recording because the failure was systematic rather than bad luck. Slow
+      sustained low drones, long attacks, minor modes, sparse irregular chimes
+      and heavy low-pass filtering are between them an almost exact recipe for
+      horror ambience. Every one of those was chosen to be *unobtrusive*, and
+      together they produced dread. Optimising against attention turns out to
+      be a short walk from optimising for unease.
+    - So the rewrite inverts each of them, and accepts a repeating phrase:
+      catchy beats eerie.
+    - Verified by rendering every theme through an `OfflineAudioContext` and
+      measuring the samples, since the character claim is the whole point:
+
+      | | ambient (creepy) | music box |
+      |---|---|---|
+      | crest factor | 3.3 | **10–12** (transients, not drone) |
+      | zero-crossing rate | low | **1400–2700/s** (bright) |
+      | audible fraction | 0.94 (continuous) | **0.18–0.25** (notes with space) |
+
+    - Peaks sit within 10% of each other and under the 0.16 sound-effect peak.
+      Square-wave themes are trimmed to 0.72, since a square carries far more
+      harmonic energy than a triangle and reads louder and harsher at equal
+      amplitude — untrimmed they were 1.25x the others.
   - Still open: stomp and level-complete sounds.
