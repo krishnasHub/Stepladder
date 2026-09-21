@@ -350,6 +350,18 @@ favor the player.
   landings. Measured 1 in 4.9, never before the streak, and reset on death.
   - It is a **5×4** heart. A 3×3 was tried first and reads as a letter Y —
     three pixels cannot carry two lobes.
+- **The eye shifts to a focused look while sprinting** — a motion streak
+  trailing a forward-set eye, mirrored to the direction of travel. It engages
+  only after `FOCUS_AFTER` (0.5s) above `FOCUS_SPEED_FRAC` (82%) of top speed in
+  one unbroken direction, so a tap or a shuffle never triggers it.
+  - Airborne still counts. A jump taken mid-sprint is part of the same
+    continuous movement, and dropping the look on every jump would make the
+    face flicker.
+  - Measured: engages after 0.58s of running (0.12s of acceleration plus the
+    threshold), drops 83ms after release, resets instantly on a turn, survives
+    a jump mid-sprint, and a 0.2s tap never trips it.
+  - Deliberately unlike the stress squint — a streak-plus-eye versus a flat
+    line — so the two never read as the same expression.
 - **The eye squints and a sweat bead appears** when the player is mashing jump.
   Stress and delight are mutually exclusive; triggering stress clears the heart.
 

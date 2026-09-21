@@ -83,6 +83,32 @@ const STRESS_THRESHOLD = 3;
 const STRESS_DECAY = 1.5;
 const STRESS_TIME = 1.3;
 
+/**
+ * Sustained running before the eye shifts to a focused look. Long enough that a
+ * tap or a shuffle never triggers it — this should read as committed movement,
+ * not as the face twitching every time you nudge the stick.
+ */
+const FOCUS_AFTER = 0.5;
+/** Fraction of top speed that counts as running rather than drifting. */
+const FOCUS_SPEED_FRAC = 0.82;
+
+/**
+ * The focused face, 5 wide, authored facing RIGHT and mirrored when facing left:
+ *   # # . # #
+ *   . . . # #
+ * A motion streak trailing a forward-set eye. Deliberately unlike the stress
+ * squint (a flat line) so the two never read as the same expression.
+ */
+const FOCUS_W = 5;
+const FOCUS_PIXELS: ReadonlyArray<readonly [number, number]> = [
+  [0, 0],
+  [1, 0],
+  [3, 0],
+  [4, 0],
+  [3, 1],
+  [4, 1],
+];
+
 /** A 2x3 sweat bead that drifts down and repeats while stressed. */
 const SWEAT_PIXELS: ReadonlyArray<readonly [number, number]> = [
   [1, 0],
@@ -212,6 +238,8 @@ export class GameScene extends Phaser.Scene {
   private heartTimer = 0;
   private stressScore = 0;
   private stressTimer = 0;
+  private runTimer = 0;
+  private runDir = 1;
   private assist: Assist = NO_ASSIST;
   private deathSpots = new Map<string, { cx: number; cy: number; hits: number }>();
   private easedSpots = new Set<string>();
@@ -342,6 +370,7 @@ export class GameScene extends Phaser.Scene {
     this.heartTimer = 0;
     this.stressScore = 0;
     this.stressTimer = 0;
+    this.runTimer = 0;
 
     this.camX = this.player.x - VIRTUAL_W / 2;
     this.camY = this.player.y - VIRTUAL_H * 0.55;
@@ -609,6 +638,17 @@ export class GameScene extends Phaser.Scene {
       }
     }
     if (this.heartTimer > 0) this.heartTimer -= dt;
+
+    // Focus builds only while genuinely running, and resets the moment the
+    // player turns around or lets go. Airborne still counts: a jump taken
+    // mid-sprint is part of the same continuous movement, and dropping the
+    // look for every jump would make it flicker.
+    const running = Math.abs(p.vx) > TUNING.runSpeed * FOCUS_SPEED_FRAC;
+    if (running && p.facing === this.runDir) this.runTimer += dt;
+    else {
+      this.runTimer = 0;
+      this.runDir = p.facing;
+    }
 
     // Stress: wasted presses accumulate, and decay when the player settles.
     this.stressScore = Math.max(0, this.stressScore - dt / STRESS_DECAY);
@@ -892,6 +932,7 @@ export class GameScene extends Phaser.Scene {
     this.heartTimer = 0;
     this.stressScore = 0;
     this.stressTimer = 0;
+    this.runTimer = 0;
     this.player.alive = false;
     this.burst(this.player.x, this.player.y, 22, this.palette.player, 130);
     this.cameras.main.shake(160, 0.012);
@@ -1067,6 +1108,14 @@ export class GameScene extends Phaser.Scene {
       if (this.stressTimer > 0) {
         // Squint: a flat line reads as a screwed-shut eye at this size.
         g.fillRect(ex - 1, Math.round(py + 4), 3, 1);
+      } else if (this.heartTimer === 0 && this.runTimer >= FOCUS_AFTER) {
+        // Streak behind a forward-set eye, mirrored to face travel.
+        const fx = Math.round(p.facing > 0 ? px + w - FOCUS_W - 1 : px + 1);
+        const fy = Math.round(py + 3);
+        for (const [dx, dy] of FOCUS_PIXELS) {
+          const mx = p.facing > 0 ? dx : FOCUS_W - 1 - dx;
+          g.fillRect(fx + mx, fy + dy, 1, 1);
+        }
       } else if (this.heartTimer > 0) {
         // Keep the whole heart on the body, on whichever side the eye is.
         const hx = Math.round(p.facing > 0 ? px + w - HEART_W - 1 : px + 1);
