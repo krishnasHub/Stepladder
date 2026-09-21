@@ -1,8 +1,8 @@
-# Stepladder
+# Foothold
 
 > The things trying to kill you are also the only way up.
 
-![Stepladder — the player mid-leap toward a turret on a platform above, in the vertical level The Climb](docs/screenshots/the-climb.png)
+![Foothold — the player mid-leap toward a turret on a platform above, in the vertical level The Climb](docs/screenshots/the-climb.png)
 
 A pastel 2D procedurally-generated side-scroller. Six levels across three
 orientations — run right, climb up, and ascend diagonally — all driven by one
@@ -78,10 +78,10 @@ a bot.
 
 ```bash
 npm run build          # -> dist/         static site, host anywhere
-npm run build:single   # -> dist-single/  ONE self-contained .html file
+npm run build:single   # -> dist-single/foothold.html  ONE self-contained file
 ```
 
-**`dist-single/index.html` is the shareable artifact.** Everything — engine,
+**`dist-single/foothold.html` is the shareable artifact.** Everything — engine,
 game, levels, font, sounds — is inlined into a single ~1.3 MB HTML file. Email
 it, drop it in Slack, or put it on a USB stick; whoever gets it just
 double-clicks. No server, no install, no build step, and it works offline.

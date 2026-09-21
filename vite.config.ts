@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { defineConfig, type Plugin } from 'vite';
 import { viteSingleFile } from 'vite-plugin-singlefile';
@@ -15,7 +15,7 @@ import { viteSingleFile } from 'vite-plugin-singlefile';
  */
 function classicScriptForFileUrls(outDir: string): Plugin {
   return {
-    name: 'stepladder:classic-script',
+    name: 'foothold:classic-script',
     enforce: 'post',
     writeBundle() {
       const file = resolve(outDir, 'index.html');
@@ -25,14 +25,20 @@ function classicScriptForFileUrls(outDir: string): Plugin {
           .replace(/\s+crossorigin(="[^"]*")?/g, '');
         return `<script${cleaned}>`;
       });
-      writeFileSync(file, html);
+      // Named after the game: this file gets emailed and passed around, and
+      // "index.html" says nothing about what it is. Only the single-file build
+      // is renamed — static hosts need dist/ to keep its index.html.
+      writeFileSync(resolve(outDir, SINGLE_FILE_NAME), html);
+      unlinkSync(file);
     },
   };
 }
 
+const SINGLE_FILE_NAME = 'foothold.html';
+
 // Two build targets:
 //   `npm run build`         -> dist/        static site, host anywhere (GitHub Pages, Netlify, ...)
-//   `npm run build:single`  -> dist-single/ ONE self-contained .html file you can email or
+//   `npm run build:single`  -> dist-single/foothold.html, ONE self-contained file you can email or
 //                              drag straight into a browser. Nothing else required.
 export default defineConfig(({ mode }) => {
   const single = mode === 'single';

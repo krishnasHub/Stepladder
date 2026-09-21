@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Stepladder — start the dev server and open the game.
+# Foothold — start the dev server and open the game.
 #
 # Usage:  ./start.sh            pick the first free port from 5199 up
 #         ./start.sh 5200       use exactly this port, or fail if it is taken
@@ -40,7 +40,7 @@ OPEN_FLAG="--open"
 if [ "${NO_OPEN:-}" = "1" ]; then OPEN_FLAG=""; fi
 
 echo
-echo "  Stepladder  ->  http://localhost:$CHOSEN"
+echo "  Foothold  ->  http://localhost:$CHOSEN"
 echo "  Ctrl-C to stop."
 echo
 

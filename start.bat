@@ -1,5 +1,5 @@
 @echo off
-rem Stepladder - start the dev server and open the game.
+rem Foothold - start the dev server and open the game.
 rem
 rem Usage:  start.bat           pick the first free port from 5199 up
 rem         start.bat 5200      use exactly this port, or fail if it is taken
@@ -50,7 +50,7 @@ set "OPEN_FLAG=--open"
 if "%NO_OPEN%"=="1" set "OPEN_FLAG="
 
 echo.
-echo   Stepladder  -^>  http://localhost:!PORT!
+echo   Foothold  -^>  http://localhost:!PORT!
 echo   Ctrl-C to stop.
 echo.
 

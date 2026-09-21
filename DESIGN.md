@@ -1,4 +1,4 @@
-# Stepladder — Design Document
+# Foothold — Design Document
 
 A 2D procedurally-generated side-scroller. Pastel, near-monochrome pixel art.
 Web-first, ported to iOS/Android.

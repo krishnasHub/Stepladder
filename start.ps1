@@ -1,4 +1,4 @@
-# Stepladder — start the dev server and open the game.
+# Foothold — start the dev server and open the game.
 #
 # Usage:  .\start.ps1                 pick the first free port from 5199 up
 #         .\start.ps1 -Port 5200      use exactly this port, or fail if taken
@@ -43,7 +43,7 @@ if ($explicit) {
 }
 
 Write-Host ""
-Write-Host "  Stepladder  ->  http://localhost:$chosen"
+Write-Host "  Foothold  ->  http://localhost:$chosen"
 Write-Host "  Ctrl-C to stop."
 Write-Host ""
 

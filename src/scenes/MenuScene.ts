@@ -48,7 +48,7 @@ export class MenuScene extends Phaser.Scene {
       g.fillRect(((i * 79) % VIRTUAL_W) - 24, 24 + ((i * 53) % (VIRTUAL_H - 60)), 58, 34);
     }
 
-    pixelText(this, VIRTUAL_W / 2, 40, 'Stepladder', {
+    pixelText(this, VIRTUAL_W / 2, 40, 'Foothold', {
       scale: 3,
       color: pal.ink,
       originX: 0.5,
