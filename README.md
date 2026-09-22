@@ -12,8 +12,9 @@ system.
 double jump*. Bots aren't obstacles, they're terrain. Some ledges are only
 reachable by stomping your way up to them.
 
-See [DESIGN.md](DESIGN.md) for the design, and [INFO.md](INFO.md) for working
-notes — invariants, environment traps, how to verify changes, and what is open.
+See [CONTEXT.md](CONTEXT.md) for the big picture, [DESIGN.md](DESIGN.md) for
+the design, and [INFO.md](INFO.md) for working notes — invariants, environment
+traps, how to verify changes, and what is open.
 
 ## Screenshots
 
