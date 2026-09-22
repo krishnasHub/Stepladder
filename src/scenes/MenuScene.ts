@@ -3,19 +3,63 @@ import { resumeAudio, startMusic, toggleMuted } from '../audio';
 import { pixelText } from '../font';
 import { LEVELS, RUN_SEED, formatTime, loadProgress } from '../levels';
 import { PALETTES } from '../palette';
-import { drawTufflingPreview, loadTufflingId, tufflingById } from '../tufflings';
+import { TROPHIES, loadTrophies } from '../trophies';
+import {
+  TUFFLINGS,
+  TufflingDef,
+  TufflingId,
+  blend,
+  drawTufflingMini,
+  drawTufflingPreview,
+  loadTufflingId,
+  tufflingById,
+} from '../tufflings';
 import { VIRTUAL_H, VIRTUAL_W } from '../tuning';
 
 const ROW_H = 16;
 const ROW_TOP = 96;
 /** The Tufflings row sits under the levels, a little apart from them. */
 const TUFFLINGS_ROW = LEVELS.length;
-const ROW_COUNT = LEVELS.length + 1;
-/** The equipped tuffling hops beside the title, at its in-game size. */
-const MASCOT_SCALE = 1;
-/** Where its feet stand, in screen pixels: level with the base of the title. */
-const MASCOT_X = 332;
-const MASCOT_FEET_Y = 51;
+const TROPHIES_ROW = LEVELS.length + 1;
+const ROW_COUNT = LEVELS.length + 2;
+/**
+ * The whole cast is on the title screen. The one you picked stands beside the
+ * title at in-game size; the rest idle on little ledges out at the sides,
+ * small and quiet so the screen stays calm, each doing its own thing.
+ */
+interface Spot {
+  x: number;
+  /** Where its feet rest, in screen pixels. */
+  feetY: number;
+  /** Which way it faces when settled: toward the title, or toward the middle. */
+  facing: number;
+}
+/** Beside the title, its body centred on the lettering (the text's centre is y 40). */
+const TITLE_SPOT: Spot = { x: 332, feetY: 47, facing: -1 };
+const SIDE_SPOTS: readonly Spot[] = [
+  { x: 62, feetY: 150, facing: 1 },
+  { x: 418, feetY: 186, facing: -1 },
+  { x: 62, feetY: 222, facing: 1 },
+];
+/** Switching Tufflings: everyone hops to their new spot. */
+const HOP_MS = 900;
+const HOP_ARC = 34;
+/** The ones at the side, drawn this much smaller than their real size. */
+const SIDE_SCALE = 0.6;
+/** What they get up to, taking turns: stroll along the ledge, hop, or just rest. */
+const IDLE_ACTS = ['wander', 'rest', 'hop', 'wander', 'rest', 'wander', 'hop', 'rest'] as const;
+const IDLE_PERIOD = 2.8;
+
+/** Who stood beside the title last time, so a new pick can hop up to take its place. */
+let lastPick: TufflingId | null = null;
+
+/** Who stands where, for a given pick: it takes the title, the rest fill the sides in roster order. */
+function layout(pick: TufflingId): Map<TufflingId, Spot> {
+  const m = new Map<TufflingId, Spot>();
+  let side = 0;
+  for (const t of TUFFLINGS) m.set(t.id, t.id === pick ? TITLE_SPOT : SIDE_SPOTS[side++]);
+  return m;
+}
 
 export class MenuScene extends Phaser.Scene {
   private selected = 0;
@@ -23,7 +67,9 @@ export class MenuScene extends Phaser.Scene {
   private carets: Phaser.GameObjects.BitmapText[] = [];
   private unlocked = 0;
   private runSeed = RUN_SEED;
-  private mascot!: Phaser.GameObjects.Graphics;
+  private cast!: Phaser.GameObjects.Graphics;
+  private moves: { def: TufflingDef; from: Spot; to: Spot }[] = [];
+  private moveStart = -1;
   private tuffling = tufflingById(loadTufflingId());
 
   constructor() {
@@ -67,7 +113,25 @@ export class MenuScene extends Phaser.Scene {
     });
 
     this.tuffling = tufflingById(loadTufflingId());
-    this.mascot = this.add.graphics().setScale(MASCOT_SCALE);
+
+    // Little ledges for the ones at the side.
+    const ledges = this.add.graphics();
+    for (const sp of SIDE_SPOTS) {
+      ledges.fillStyle(blend(pal.env, pal.bg, 0.35), 1);
+      ledges.fillRect(sp.x - 15, sp.feetY, 30, 2);
+      ledges.fillStyle(blend(pal.env, pal.bg, 0.6), 1);
+      ledges.fillRect(sp.x - 13, sp.feetY + 2, 26, 1);
+    }
+
+    // Everyone's spot now, and where they were last time: if the pick changed,
+    // they all hop across to their new places.
+    const pick = this.tuffling.id;
+    const to = layout(pick);
+    const from = lastPick && lastPick !== pick ? layout(lastPick) : to;
+    this.moves = TUFFLINGS.map((def) => ({ def, from: from.get(def.id)!, to: to.get(def.id)! }));
+    this.moveStart = -1;
+    lastPick = pick;
+    this.cast = this.add.graphics();
 
     pixelText(this, VIRTUAL_W / 2, 66, 'Stomp a bot to refresh your double jump', {
       color: pal.env,
@@ -135,6 +199,9 @@ export class MenuScene extends Phaser.Scene {
     });
     this.rows.push(pt);
 
+    // Trophies: the shelf of everything found so far.
+    this.addExtraRow(TROPHIES_ROW, 'Trophies', `${loadTrophies().size}/${TROPHIES.length}`);
+
     pixelText(this, VIRTUAL_W / 2, VIRTUAL_H - 30, 'Arrows or A D - Space to jump', {
       color: pal.env,
       originX: 0.5,
@@ -167,21 +234,73 @@ export class MenuScene extends Phaser.Scene {
    * caret landing there just shows you what you have not reached yet.
    */
   override update(time: number): void {
-    // Facing the title, hopping now and then.
-    const g = this.mascot;
+    const pal = PALETTES[0];
+    const g = this.cast;
     g.clear();
     const t = time / 1000;
-    const mood = t % 4 < 1 ? 'happy' : 'default';
-    drawTufflingPreview(
-      g,
-      this.tuffling,
-      mood,
-      MASCOT_X / MASCOT_SCALE,
-      MASCOT_FEET_Y / MASCOT_SCALE,
-      -1,
-      PALETTES[0],
-      t,
-    );
+    if (this.moveStart < 0) this.moveStart = time;
+    const p = Math.min(1, (time - this.moveStart) / HOP_MS);
+    const e = 1 - Math.pow(1 - p, 2);
+
+    this.moves.forEach(({ def, from, to }) => {
+      // Mid-hop to a new spot, growing or shrinking on the way.
+      if (from !== to && p < 1) {
+        const x = from.x + (to.x - from.x) * e;
+        const feet = from.feetY + (to.feetY - from.feetY) * e - Math.sin(Math.PI * e) * HOP_ARC;
+        const facing = Math.sign(to.x - from.x) || to.facing;
+        const s0 = from === TITLE_SPOT ? 1 : SIDE_SCALE;
+        const s1 = to === TITLE_SPOT ? 1 : SIDE_SCALE;
+        const sc = s0 + (s1 - s0) * e;
+        if (sc > 0.95) drawTufflingPreview(g, def, 'default', Math.round(x), Math.round(feet), facing, pal, t);
+        else drawTufflingMini(g, def, Math.round(x), Math.round(feet), facing, pal, t, sc);
+        return;
+      }
+
+      // Beside the title: facing it, hopping now and then.
+      if (to === TITLE_SPOT) {
+        drawTufflingPreview(g, def, t % 4 < 1 ? 'happy' : 'default', to.x, to.feetY, to.facing, pal, t);
+        return;
+      }
+
+      // At the side, doing its own thing. Each keeps its own schedule.
+      const k = SIDE_SPOTS.indexOf(to);
+      const tt = t + k * 1.3 + 0.7;
+      const n = Math.floor(tt / IDLE_PERIOD);
+      const u = (tt % IDLE_PERIOD) / IDLE_PERIOD;
+      const act = IDLE_ACTS[(n + k * 3) % IDLE_ACTS.length];
+      let x = to.x;
+      let feet = to.feetY;
+      let facing = to.facing;
+      if (act === 'wander') {
+        // Stroll out along the ledge and back, with a little step bob.
+        const dir = n % 2 ? 1 : -1;
+        x = to.x + dir * 8 * Math.sin(Math.PI * u);
+        facing = u < 0.5 ? dir : -dir;
+        feet -= Math.floor(t * 8) % 2;
+      } else if (act === 'hop' && u < 0.3) {
+        feet -= Math.round(5 * Math.sin((Math.PI * u) / 0.3));
+      }
+      drawTufflingMini(g, def, Math.round(x), feet, facing, pal, t, SIDE_SCALE);
+    });
+  }
+
+  /** A row under the levels that opens another screen, with a note on the right. */
+  private addExtraRow(row: number, label: string, note: string): void {
+    const pal = PALETTES[0];
+    const y = ROW_TOP + row * ROW_H + 6;
+    this.carets.push(pixelText(this, VIRTUAL_W / 2 - 118, y, '>', { color: pal.player, originY: 0.5 }));
+    const t = pixelText(this, VIRTUAL_W / 2 - 100, y, label, { color: pal.ink, originY: 0.5 });
+    pixelText(this, VIRTUAL_W / 2 + 118, y, note, { color: pal.env, originX: 1, originY: 0.5 });
+    t.setInteractive(new Phaser.Geom.Rectangle(-110, -ROW_H / 2, 240, ROW_H), Phaser.Geom.Rectangle.Contains);
+    t.on('pointerover', () => {
+      this.selected = row;
+      this.refresh();
+    });
+    t.on('pointerdown', () => {
+      this.selected = row;
+      this.start();
+    });
+    this.rows.push(t);
   }
 
   private move(d: number): void {
@@ -194,7 +313,7 @@ export class MenuScene extends Phaser.Scene {
     const pal = PALETTES[0];
     this.rows.forEach((t, i) => {
       const on = i === this.selected;
-      const locked = i !== TUFFLINGS_ROW && i > this.unlocked;
+      const locked = i < LEVELS.length && i > this.unlocked;
       this.carets[i].setVisible(on);
       this.carets[i].setTint(locked ? pal.env : pal.player);
       t.setTint(locked ? pal.env : on ? pal.player : pal.ink);
@@ -202,6 +321,10 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private start(): void {
+    if (this.selected === TROPHIES_ROW) {
+      this.scene.start('Trophies');
+      return;
+    }
     if (this.selected === TUFFLINGS_ROW) {
       this.scene.start('Tufflings');
       return;

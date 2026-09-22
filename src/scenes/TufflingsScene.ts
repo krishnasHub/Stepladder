@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { STAT_BARS } from '../abilities';
 import { playDoubleJump, resumeAudio, toggleMuted } from '../audio';
 import { pixelText } from '../font';
 import { PALETTES } from '../palette';
@@ -21,6 +22,20 @@ const SLOT_X = [30, 63, 97, 130];
 const FEET_Y = 46;
 /** Top of the selection panel: clear of the subtitle, which ends at y 51 on screen. */
 const PANEL_TOP = 20;
+/**
+ * The stat bars under the tagline: label, then five pips. Laid out left to
+ * right from STATS_X, in screen pixels.
+ */
+const STATS_Y = 204;
+const STATS_X = 122;
+const PIP = 5;
+const PIP_GAP = 2;
+const STATS: ReadonlyArray<{ key: 'jump' | 'speed' | 'climb'; label: string; width: number }> = [
+  { key: 'jump', label: 'Jump', width: 63 },
+  { key: 'speed', label: 'Speed', width: 69 },
+  { key: 'climb', label: 'Climb', width: 69 },
+];
+const STATS_GAP = 18;
 /** Every tuffling acts out the same mood together, so they compare side by side. */
 const MOOD_SECONDS = 2.2;
 
@@ -32,6 +47,7 @@ export class TufflingsScene extends Phaser.Scene {
   private inUse: Phaser.GameObjects.BitmapText[] = [];
   private txtTagline!: Phaser.GameObjects.BitmapText;
   private txtMood!: Phaser.GameObjects.BitmapText;
+  private gStats!: Phaser.GameObjects.Graphics;
   private lastMood = -1;
 
   constructor() {
@@ -72,8 +88,16 @@ export class TufflingsScene extends Phaser.Scene {
       });
     });
 
-    this.txtTagline = pixelText(this, VIRTUAL_W / 2, 190, '', { color: pal.ink, originX: 0.5 });
-    this.txtMood = pixelText(this, VIRTUAL_W / 2, 206, '', { color: pal.env, originX: 0.5 });
+    this.txtTagline = pixelText(this, VIRTUAL_W / 2, 186, '', { color: pal.ink, originX: 0.5 });
+    this.txtMood = pixelText(this, VIRTUAL_W / 2, 224, '', { color: pal.env, originX: 0.5 });
+
+    // Stat labels; the pips are drawn in refresh() for whoever is selected.
+    this.gStats = this.add.graphics();
+    let sx = STATS_X;
+    for (const st of STATS) {
+      pixelText(this, sx, STATS_Y, st.label, { color: pal.env });
+      sx += st.width + STATS_GAP;
+    }
 
     pixelText(this, VIRTUAL_W / 2, VIRTUAL_H - 22, 'Left Right choose - Enter pick - ESC back', {
       color: pal.env,
@@ -154,5 +178,18 @@ export class TufflingsScene extends Phaser.Scene {
       this.inUse[i].setVisible(p.id === this.equipped);
     });
     this.txtTagline.setText(TUFFLINGS[this.selected].tagline.toUpperCase());
+
+    const bars = STAT_BARS[TUFFLINGS[this.selected].id];
+    const g = this.gStats;
+    g.clear();
+    let sx = STATS_X;
+    for (const st of STATS) {
+      const px0 = sx + st.width - 5 * (PIP + PIP_GAP) + PIP_GAP;
+      for (let i = 0; i < 5; i++) {
+        g.fillStyle(i < bars[st.key] ? pal.player : pal.bgAccent, 1);
+        g.fillRect(px0 + i * (PIP + PIP_GAP), STATS_Y + 1, PIP, PIP);
+      }
+      sx += st.width + STATS_GAP;
+    }
   }
 }

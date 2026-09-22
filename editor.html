@@ -124,6 +124,22 @@
       .finish small { color: var(--muted); font-variant-numeric: tabular-nums; }
       .finish.yes strong { color: var(--ok); }
       .finish.no strong { color: var(--error); }
+      .whos { display: grid; gap: 2px; margin-top: 6px; }
+      .trophy-head { display: block; margin-top: 10px; color: var(--ink); }
+      .who {
+        display: grid;
+        grid-template-columns: 1fr;
+        text-align: left;
+        border: 1px solid transparent;
+        background: transparent;
+        padding: 3px 6px;
+        border-radius: 5px;
+      }
+      .who span { font-weight: 600; font-size: 13px; }
+      .who small { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+      .who.ok span { color: var(--ok); }
+      .who.bad span { color: var(--error); }
+      .who.sel { border-color: var(--line); background: var(--surface); }
       .route-toggle { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
 
       .library { display: grid; gap: 4px; }
@@ -200,6 +216,10 @@
       <button id="export">Export</button>
       <button id="import">Import</button>
       <input id="import-file" type="file" accept="application/json,.json" hidden />
+      <div class="field">
+        <label for="play-as">Play as</label>
+        <select id="play-as"></select>
+      </div>
       <button id="play" class="primary" title="Ctrl+Enter">Play ▶</button>
     </header>
     <main>

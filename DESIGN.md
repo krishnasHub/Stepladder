@@ -414,9 +414,10 @@ favor the player.
   | mashing mid-air, out of jumps | 7 | yes, after 4 |
 - **Tufflings.** The player picks a character, a *Tuffling*, from the title
   screen; Mochi is the default. Four ship: Mochi (two button eyes), Button
-  (one shiny eye), Peeper (one big eye with a lid) and Classic (the original
-  block). All share the 10×14 hitbox; only the drawing differs. They live in
-  `src/tufflings.ts`, and the choice is saved per browser.
+  (one shiny eye), Pepper (one big eye with a lid) and Hugsy (the original
+  block). All share the 10×14 hitbox. How they look lives in
+  `src/tufflings.ts`, how they move in `src/abilities.ts`, and the choice is
+  saved per browser.
   - Plush bodies are lit from the top-left with a shaded base and carry blush
     on content moods, which drains when stressed or nervous.
   - Six more faces on top of the six above, slotted into the same one-face
@@ -427,9 +428,42 @@ favor the player.
   - Two layers that are not moods: a blink every few seconds, and a gaze that
     follows a jump up and a fall down. They touch only the resting faces, so
     they never fight the one-face rule.
-  - Classic has only the original six faces. A face it lacks is *skipped* in
-    the precedence, not replaced by the default, so it still shows focus
-    beside the portal.
+  - Hugsy adds three climbing faces above all of those while it clings:
+    **climb** on a wall, **hang** from a ceiling, and **strain** (squint,
+    sweat, shiver) once grip drops below 0.8s.
+- **Tuffling abilities.** The rule: **every Tuffling can finish every level.**
+  Abilities only open shortcuts and change the ride, so every strength has a
+  cost, and nothing that decides fairness differs — the hitbox, coyote time,
+  the jump buffer and corner correction stay in `TUNING` for all four.
+
+  | | run px/s | jump (tiles) | double (tiles) | other |
+  |---|---|---|---|---|
+  | Mochi | 140 | 3.50 | 5.81 | — the reference; its numbers are TUNING's |
+  | Button | 125 | 4.07 | 6.75 | falls at 560 px/s² (vs 914), max fall 250 |
+  | Pepper | 180 | 3.18 | 5.32 | accelerates faster, slides further stopping |
+  | Hugsy | 110 | 2.98 | 4.71 | clings to walls and ceilings |
+
+  - **Hugsy's grip.** Walls: grabbed only when pushing *into* one near the top
+    of a jump or falling (rising faster than 80 px/s it carries on up, so a
+    hop onto a step doesn't snag on its side). Toward climbs (55 px/s), away
+    slides (80 px/s), neither hangs. Ceilings: grabbed automatically instead
+    of the bonk; left/right shimmy (55 px/s), stopping while still half under
+    the edge. Climbing past the top of a wall hops you onto it. Jump lets go
+    and simply drops. Grip is 2.5s, drained 1.8× faster while moving,
+    refilled by landing or a stomp; clinging never refreshes the double jump.
+  - **Sounds.** Wall grab: a soft thump. Ceiling grab: "woo-hoo!" Grip running
+    out: the d'oh. Letting go on purpose: silent.
+  - **Checked, not assumed.** The editor's finishability search runs once per
+    Tuffling with its own physics, and the six real levels were checked the
+    same way. That check is what found the flyer ladders (`v_botladder`,
+    `d_botgate`) too far apart for Hugsy — four rows, tuned for Mochi only —
+    now three.
+- **Trophies.** One per level, purely to find and show off on the title
+  screen's **Trophies** shelf. Chunks mark candidate spots with `C`; each
+  level uses the one nearest 60% of the way through, chosen from the layout
+  alone so it never draws from, or disturbs, the level's RNG. Found trophies
+  are kept the moment they're touched; afterwards the spot shows a faint
+  outline. Every trophy was checked reachable by every Tuffling.
 - Player: ~10 × 14 px hitbox; tufflings draw 10–12 wide.
 
 ---

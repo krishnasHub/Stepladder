@@ -26,6 +26,9 @@ import {
   setPlaytest,
 } from '../customLevels';
 import { PALETTES, Palette } from '../palette';
+import { CUSTOM_TROPHY, drawTrophy } from '../trophies';
+import { TUFFLING_IDS } from '../abilities';
+import type { TufflingId } from '../tufflings';
 import type { SolveProgress, SolveResult } from './solver';
 
 // ---------------------------------------------------------------------------
@@ -47,7 +50,8 @@ const TOOLS: Tool[] = [
   { id: 'turret', label: 'Turret', char: TILES.turret, key: '3' },
   { id: 'start', label: 'Start', char: TILES.start, key: '4', single: true },
   { id: 'portal', label: 'Exit portal', char: TILES.portal, key: '5', single: true },
-  { id: 'eraser', label: 'Eraser', char: TILES.empty, key: '6' },
+  { id: 'trophy', label: 'Trophy', char: TILES.trophy, key: '6', single: true },
+  { id: 'eraser', label: 'Eraser', char: TILES.empty, key: '7' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -148,6 +152,24 @@ function drawTile(c: CanvasRenderingContext2D, ch: string, px: number, py: numbe
       c.beginPath();
       c.ellipse(cx, cy, 2.5 * s, 5 * s, 0, 0, Math.PI * 2);
       c.fill();
+      break;
+    }
+    case TILES.trophy: {
+      const px1 = Math.max(1, Math.round(s));
+      const pen = {
+        fillStyle(color: number, alpha = 1) {
+          c.globalAlpha = alpha;
+          c.fillStyle = hex(color);
+          return this;
+        },
+        fillRect(x: number, y: number, w: number, h: number) {
+          c.fillRect(px + x * px1, py + y * px1, w * px1, h * px1);
+          return this;
+        },
+      };
+      const off = (z / px1) / 2;
+      drawTrophy(pen as never, CUSTOM_TROPHY, off, off);
+      c.globalAlpha = 1;
       break;
     }
     default:
@@ -256,22 +278,43 @@ function changed(layout = true): void {
 // "Can it be finished?" — the real physics, searched in a worker (solver.ts)
 // ---------------------------------------------------------------------------
 
+/** Every level should be finishable by every Tuffling, so each gets a check. */
+const NAMES: Record<TufflingId, string> = { mochi: 'Mochi', button: 'Button', pepper: 'Pepper', hugsy: 'Hugsy' };
+
 type Check =
-  | { state: 'waiting' }
-  | { state: 'blocked' }
+  | { state: 'queued' }
   | { state: 'running'; explored: number; closest: number; started: number }
   | { state: 'done'; result: SolveResult };
 
-let check: Check = { state: 'waiting' };
+type Aim = 'portal' | 'trophy';
+type Tagged<T> = T & { tuffling: TufflingId; aim: Aim };
+
+/** 'waiting' before the pause-in-editing timer fires; 'blocked' if the level has errors. */
+let phase: 'waiting' | 'blocked' | 'checking' = 'waiting';
+let checks: Record<Aim, Record<TufflingId, Check>> = { portal: freshChecks(), trophy: freshChecks() };
+let hasTrophy = false;
+/** Whose route is drawn. Follows the first Tuffling that can't finish, unless you pick one. */
+let routeFor: { aim: Aim; id: TufflingId } | null = null;
 let worker: Worker | null = null;
 let checkTimer = 0;
+
+function freshChecks(): Record<TufflingId, Check> {
+  return { mochi: { state: 'queued' }, button: { state: 'queued' }, pepper: { state: 'queued' }, hugsy: { state: 'queued' } };
+}
+
+/** The order the worker runs them in. */
+function sequence(): { aim: Aim; id: TufflingId }[] {
+  const aims: Aim[] = hasTrophy ? ['portal', 'trophy'] : ['portal'];
+  return aims.flatMap((aim) => TUFFLING_IDS.map((id) => ({ aim, id })));
+}
 
 /** Wait for a pause in editing, then check. Any edit cancels a running check. */
 function scheduleCheck(): void {
   worker?.terminate();
   worker = null;
   window.clearTimeout(checkTimer);
-  check = { state: 'waiting' };
+  phase = 'waiting';
+  checks = { portal: freshChecks(), trophy: freshChecks() };
   renderFinish();
   checkTimer = window.setTimeout(startCheck, 700);
 }
@@ -279,27 +322,37 @@ function scheduleCheck(): void {
 function startCheck(): void {
   // No start or portal: nothing to search for yet.
   if (issues.some((i) => i.severity === 'error')) {
-    check = { state: 'blocked' };
+    phase = 'blocked';
     renderFinish();
     render();
     return;
   }
+  hasTrophy = level.rows.some((r) => r.includes(TILES.trophy));
+  if (routeFor?.aim === 'trophy' && !hasTrophy) routeFor = null;
   const w = new Worker(new URL('./solver.worker.ts', import.meta.url), { type: 'module' });
   worker = w;
-  check = { state: 'running', explored: 0, closest: 0, started: performance.now() };
-  w.onmessage = (e: MessageEvent<SolveProgress | SolveResult>) => {
+  phase = 'checking';
+  checks = { portal: freshChecks(), trophy: freshChecks() };
+  w.onmessage = (e: MessageEvent<Tagged<SolveProgress | SolveResult>>) => {
     if (worker !== w) return;
+    const { tuffling: id, aim } = e.data;
     if (e.data.kind === 'progress') {
-      check = { ...(check as Extract<Check, { state: 'running' }>), explored: e.data.explored, closest: e.data.closest };
-      renderFinish();
+      const prev = checks[aim][id];
+      const started = prev.state === 'running' ? prev.started : performance.now();
+      checks[aim][id] = { state: 'running', explored: e.data.explored, closest: e.data.closest, started };
     } else {
-      check = { state: 'done', result: e.data };
-      w.terminate();
-      worker = null;
-      renderFinish();
+      checks[aim][id] = { state: 'done', result: e.data };
+      const next = sequence().find((q) => checks[q.aim][q.id].state === 'queued');
+      if (next) checks[next.aim][next.id] = { state: 'running', explored: 0, closest: 0, started: performance.now() };
+      else {
+        w.terminate();
+        worker = null;
+      }
       render();
     }
+    renderFinish();
   };
+  checks.portal.mochi = { state: 'running', explored: 0, closest: 0, started: performance.now() };
   w.postMessage({ rows: level.rows });
   renderFinish();
   render();
@@ -308,29 +361,86 @@ function startCheck(): void {
 const fmt = (n: number): string => n.toLocaleString();
 const secs = (ms: number): string => (ms < 1000 ? `${Math.max(1, Math.round(ms))}ms` : `${(ms / 1000).toFixed(1)}s`);
 
+/** Whose route to draw: your pick, else the first that can't reach the portal, else Mochi's. */
+function shownRoute(): { aim: Aim; id: TufflingId } {
+  if (routeFor) return routeFor;
+  const stuck = TUFFLING_IDS.find((t) => { const c = checks.portal[t]; return c.state === 'done' && !c.result.finished; });
+  return { aim: 'portal', id: stuck ?? 'mochi' };
+}
+
+function rowFor(aim: Aim, t: TufflingId): string {
+  const c = checks[aim][t];
+  let mark = '·';
+  let detail = 'waiting';
+  let cls = '';
+  if (c.state === 'running') {
+    mark = '…';
+    detail = `${fmt(c.explored)} moves · ${Math.round(c.closest * 100)}% of the way`;
+  } else if (c.state === 'done') {
+    mark = c.result.finished ? '✓' : '✗';
+    cls = c.result.finished ? 'ok' : 'bad';
+    const what = aim === 'portal' ? 'route' : 'reachable';
+    detail = c.result.finished ? `${what} (${secs(c.result.ms)})` : `can’t get there (${secs(c.result.ms)})`;
+  }
+  const shown = shownRoute();
+  const sel = shown.aim === aim && shown.id === t ? ' sel' : '';
+  return `<button class="who ${cls}${sel}" data-aim="${aim}" data-t="${t}" title="Show ${NAMES[t]}’s route"><span>${mark} ${NAMES[t]}</span><small>${detail}</small></button>`;
+}
+
 function renderFinish(): void {
   const el = $('finish');
   el.className = 'finish';
-  if (check.state === 'waiting') {
+  if (phase === 'waiting') {
     el.innerHTML = '<strong>Checking soon…</strong><small>Waiting for you to pause</small>';
-  } else if (check.state === 'blocked') {
-    el.innerHTML = '<strong>Can it be finished?</strong><small>Fix the errors below first</small>';
-  } else if (check.state === 'running') {
-    const t = secs(performance.now() - check.started);
-    el.innerHTML = `<strong>Checking…</strong><small>${fmt(check.explored)} moves tried · ${t}</small><small>Closest so far: ${Math.round(check.closest * 100)}% of the way</small>`;
-  } else if (check.result.finished) {
-    el.classList.add('yes');
-    el.innerHTML = `<strong>✓ Can be finished</strong><small>Route found in ${secs(check.result.ms)} (${fmt(check.result.explored)} moves)</small>`;
-  } else {
-    el.classList.add('no');
-    el.innerHTML = `<strong>✗ Can’t reach the portal</strong><small>Tried every route (${fmt(check.result.explored)} moves, ${secs(check.result.ms)})</small><small>The red line shows how far it gets</small>`;
+    return;
   }
+  if (phase === 'blocked') {
+    el.innerHTML = '<strong>Can it be finished?</strong><small>Fix the errors below first</small>';
+    return;
+  }
+
+  const portal = checks.portal;
+  const done = TUFFLING_IDS.filter((t) => portal[t].state === 'done');
+  const failed = done.filter((t) => { const c = portal[t]; return c.state === 'done' && !c.result.finished; });
+  let head: string;
+  if (failed.length) {
+    el.classList.add('no');
+    head = `✗ ${failed.map((t) => NAMES[t]).join(', ')} can’t reach the portal`;
+  } else if (done.length === TUFFLING_IDS.length) {
+    el.classList.add('yes');
+    head = '✓ Every Tuffling can finish';
+  } else {
+    head = 'Checking…';
+  }
+
+  let html = `<strong>${head}</strong><div class="whos">${TUFFLING_IDS.map((t) => rowFor('portal', t)).join('')}</div>`;
+  if (hasTrophy) {
+    const got = TUFFLING_IDS.filter((t) => { const c = checks.trophy[t]; return c.state === 'done' && c.result.finished; });
+    const allDone = TUFFLING_IDS.every((t) => checks.trophy[t].state === 'done');
+    const trophyHead = !allDone
+      ? 'Trophy: checking…'
+      : got.length
+        ? `Trophy: reachable by ${got.length === 4 ? 'everyone' : got.map((t) => NAMES[t]).join(', ')}`
+        : 'Trophy: nobody can reach it';
+    html += `<strong class="trophy-head">${trophyHead}</strong><div class="whos">${TUFFLING_IDS.map((t) => rowFor('trophy', t)).join('')}</div>`;
+  }
+  el.innerHTML = html;
+  el.querySelectorAll<HTMLButtonElement>('.who').forEach((b) =>
+    b.addEventListener('click', () => {
+      routeFor = { aim: b.dataset.aim as Aim, id: b.dataset.t as TufflingId };
+      renderFinish();
+      render();
+    }),
+  );
 }
 
 /** The route (or the attempt that got closest), drawn over the level. */
 function drawRoute(): void {
-  if (check.state !== 'done' || !$<HTMLInputElement>('show-route').checked) return;
-  const { path, finished } = check.result;
+  if (!$<HTMLInputElement>('show-route').checked) return;
+  const r = shownRoute();
+  const c = checks[r.aim][r.id];
+  if (c.state !== 'done') return;
+  const { path, finished } = c.result;
   if (path.length < 2) return;
   const s = zoom / 16;
   ctx.save();
@@ -627,9 +737,34 @@ function play(): void {
     return;
   }
   // A named window: pressing Play again reloads the same game tab.
-  window.open(`/?playtest=${encodeURIComponent(level.id)}`, 'foothold-playtest');
+  const as = encodeURIComponent(playAs.value);
+  window.open(`/?playtest=${encodeURIComponent(level.id)}&as=${as}`, 'foothold-playtest');
 }
 $('play').addEventListener('click', play);
+
+// Who to playtest as. Only for playtests: the Tuffling picked in the game itself
+// is left alone. Remembered in this browser between editor visits.
+const PLAY_AS_KEY = 'foothold.editor.playAs';
+const playAs = $<HTMLSelectElement>('play-as');
+for (const t of TUFFLING_IDS) {
+  const o = document.createElement('option');
+  o.value = t;
+  o.textContent = NAMES[t];
+  playAs.append(o);
+}
+try {
+  const saved = localStorage.getItem(PLAY_AS_KEY);
+  if (saved && (TUFFLING_IDS as readonly string[]).includes(saved)) playAs.value = saved;
+} catch {
+  /* storage blocked: default to Mochi */
+}
+playAs.addEventListener('change', () => {
+  try {
+    localStorage.setItem(PLAY_AS_KEY, playAs.value);
+  } catch {
+    /* not remembered; still used for this playtest */
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Tool buttons

@@ -7,20 +7,27 @@
  * the double jump and stomp bounces all behave exactly as in the game, so a
  * route found here is a route a player has.
  *
- * Turret bodies and spikes kill, turrets can be stomped, and falling off the
- * bottom is death. Turret BULLETS are ignored: dodging shots is about timing,
- * not whether the level can be finished at all, and modelling them would make
- * every state depend on the clock.
+ * Each check is for one Tuffling, with its own abilities: Button's float,
+ * Pepper's speed, Hugsy's clinging. Every level is meant to be finishable by all
+ * four, so the editor runs it once for each.
+ *
+ * Bot bodies and spikes kill, bots can be stomped, and falling off the bottom
+ * is death. Bots are held still at their starting spot: turrets never move, and
+ * treating walkers and flyers the same way keeps every state free of the clock.
+ * Turret BULLETS are ignored for the same reason: dodging shots is about
+ * timing, not whether the level can be finished at all.
  *
  * No time limit. It explores every distinct state it can reach, nearest-to-the-
  * portal first, so it either finds a route or proves there is none (at the
  * search's resolution).
  */
 
+import { abilityOf } from '../abilities';
 import { NO_ASSIST } from '../assist';
 import { Player } from '../player';
+import type { TufflingId } from '../tufflings';
 import { PLAYER_H, PLAYER_W } from '../tuning';
-import { Rect, buildCustomLevel } from '../world';
+import { BuiltLevel, Rect, buildCustomLevel } from '../world';
 
 /** Frames each input is held for. 4 frames is 67ms, well under human reaction. */
 const BURST = 4;
@@ -61,15 +68,19 @@ const FIELDS = [
   'trailTimer',
   'squashTimer',
   'squashStrength',
+  'cling',
+  'clingSide',
+  'grip',
+  'clingCooldown',
 ] as const;
 
-type PlayerState = Record<(typeof FIELDS)[number], number | boolean>;
+type PlayerState = Record<(typeof FIELDS)[number], number | boolean | string>;
 
 interface Node {
   p: PlayerState;
   jumpHeld: boolean;
   prevJump: boolean;
-  /** One char per turret, '1' alive / '0' stomped. */
+  /** One char per bot, '1' alive / '0' stomped. */
   bots: string;
   /** Distance to the portal, for ordering. */
   h: number;
@@ -139,32 +150,53 @@ class Heap {
 const overlaps = (a: Rect, b: Rect): boolean =>
   a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 
-export function solve(rows: string[], onProgress?: (p: SolveProgress) => void): SolveResult {
-  const t0 = Date.now();
+/** Check a hand-built level (editor rows) for one Tuffling. */
+export function solve(
+  rows: string[],
+  tuffling: TufflingId = 'mochi',
+  onProgress?: (p: SolveProgress) => void,
+  aim: 'portal' | 'trophy' = 'portal',
+): SolveResult {
   const level = buildCustomLevel(rows);
+  return solveLevel(level, tuffling, onProgress, aim === 'trophy' ? level.trophy : undefined);
+}
+
+/**
+ * Check any built level — hand-built or generated — for one Tuffling.
+ * `target` swaps the portal for another spot, such as the level's trophy.
+ */
+export function solveLevel(
+  level: BuiltLevel,
+  tuffling: TufflingId = 'mochi',
+  onProgress?: (p: SolveProgress) => void,
+  target?: Rect,
+): SolveResult {
+  const t0 = Date.now();
   const grid = level.grid;
-  const goal = level.goal;
+  const goal = target ?? level.goal;
   const gx = goal.x + goal.w / 2;
   const gy = goal.y + goal.h / 2;
   const startDist = Math.hypot(gx - level.startX, gy - level.startY) || 1;
   const killY = level.bounds.y + level.bounds.h;
 
-  // Turrets never move, so each is just a box that can be stomped away.
-  const turrets = level.spawns
-    .filter((s) => s.kind === 'turret')
-    .map((s) => ({ x: s.x, y: s.y, box: { x: s.x - 6, y: s.y - 6, w: 12, h: 12 } }));
+  // Each bot is a box at its starting spot that kills on contact, unless stomped.
+  const turrets = level.spawns.map((s) => {
+    const h = s.kind === 'walker' ? 13 : 12;
+    return { x: s.x, y: s.y, box: { x: s.x - 6, y: s.y - h / 2, w: 12, h } };
+  });
 
   const player = new Player();
+  player.setAbility(abilityOf(tuffling));
   const input = new ScriptedInput();
 
   const save = (): PlayerState => {
     const o = {} as PlayerState;
-    const p = player as unknown as Record<string, number | boolean>;
+    const p = player as unknown as Record<string, number | boolean | string>;
     for (const k of FIELDS) o[k] = p[k];
     return o;
   };
   const load = (n: Node): void => {
-    const p = player as unknown as Record<string, number | boolean>;
+    const p = player as unknown as Record<string, number | boolean | string>;
     for (const k of FIELDS) p[k] = n.p[k];
     player.alive = true;
     player.trail.length = 0;
@@ -198,27 +230,33 @@ export function solve(rows: string[], onProgress?: (p: SolveProgress) => void): 
   // few pixels wide: a route that only works to the exact pixel is one no
   // person can play, so merging it away costs nothing that matters.
   //
-  // Packed into one number (bots handled separately), since building strings
-  // for tens of millions of states is most of the cost.
+  // Packed into one number, since building strings for tens of millions of
+  // states is most of the cost. Only once a bot has been stomped does the key
+  // need a string, to carry which ones.
   const botIds = new Map<string, number>();
-  const key = (n: Node): number => {
+  const key = (n: Node): number | string => {
     const p = n.p;
     let bot = botIds.get(n.bots);
     if (bot === undefined) {
       bot = botIds.size;
       botIds.set(n.bots, bot);
     }
-    const xb = Math.round(((p.x as number) - level.bounds.x) / 3); // < 2^12 for 400 tiles
-    const yb = Math.round(((p.y as number) - level.bounds.y) / 3); // < 2^10 for 120 tiles
-    const vxb = Math.round((p.vx as number) / 30) + 8; // 4 bits
+    const xb = Math.min(4095, Math.round(((p.x as number) - level.bounds.x) / 3)); // 12 bits
+    const yb = Math.min(4095, Math.round(((p.y as number) - level.bounds.y) / 3)); // 12 bits
+    const vxb = Math.max(0, Math.min(15, Math.round((p.vx as number) / 30) + 8)); // 4 bits
     const vyb = Math.max(0, Math.min(31, Math.round((p.vy as number) / 50) + 16)); // 5 bits
     const flags =
       ((p.jumpsLeft as number) > 0 ? 1 : 0) |
       (p.grounded ? 2 : 0) |
       ((p.coyote as number) > 0 ? 4 : 0) |
       (n.jumpHeld ? 8 : 0); // 4 bits
-    // 12 + 10 + 4 + 5 + 4 = 35 bits, times the bot-state id: well within 2^53.
-    return ((((xb * 1024 + yb) * 16 + vxb) * 32 + vyb) * 16 + flags) + bot * 2 ** 35;
+    // Climbers: which way they're clinging, and roughly how much grip is left.
+    const cling = p.cling === 'wall' ? ((p.clingSide as number) > 0 ? 1 : 2) : p.cling === 'ceiling' ? 3 : 0; // 2 bits
+    const grip = Math.min(15, Math.round((p.grip as number) / 0.25)); // 4 bits
+    const cool = (p.clingCooldown as number) > 0 ? 1 : 0; // 1 bit
+    // 12 + 12 + 4 + 5 + 4 + 2 + 4 + 1 = 44 bits: well within 2^53.
+    const k = ((((((xb * 4096 + yb) * 16 + vxb) * 32 + vyb) * 16 + flags) * 4 + cling) * 16 + grip) * 2 + cool;
+    return bot === 0 ? k : `${k}|${bot}`;
   };
 
   player.reset(level.startX, level.startY);
@@ -235,7 +273,7 @@ export function solve(rows: string[], onProgress?: (p: SolveProgress) => void): 
 
   const open = new Heap();
   open.push(root);
-  const seen = new Set<number>([key(root)]);
+  const seen = new Set<number | string>([key(root)]);
   let closest = root;
   let explored = 0;
 

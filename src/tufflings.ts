@@ -1,9 +1,10 @@
 import Phaser from 'phaser';
+import { abilityOf, jumpHeights } from './abilities';
 import type { Palette } from './palette';
 
 /**
  * Tufflings: the characters the player can pick. Every one shares the 10x14
- * hitbox; only the drawing differs.
+ * hitbox. How each one MOVES lives in abilities.ts; this module is how it looks.
  *
  * The eyes do all the talking. Each tuffling draws the same set of faces, and
  * exactly one face is ever showing — GameScene decides which, this module only
@@ -21,9 +22,13 @@ export type Face =
   | 'bonk'
   | 'dizzy'
   | 'sleepy'
-  | 'starry';
+  | 'starry'
+  // Climbers only: on a wall, hanging from a ceiling, and grip running out.
+  | 'climb'
+  | 'hang'
+  | 'strain';
 
-export type TufflingId = 'dot' | 'button' | 'mochi' | 'peeper';
+export type TufflingId = 'mochi' | 'button' | 'pepper' | 'hugsy';
 
 export interface Box {
   left: number;
@@ -200,12 +205,42 @@ const roundedRect: Mask = (x, y, w, h) => !((x === 0 || x === w - 1) && (y === 0
 // Faces
 // ---------------------------------------------------------------------------
 
-/** The original: background-coloured cut-outs, one mark per mood. */
-const faceDot: FaceFn = (pen, face, _t, pal) => {
+/** Hugsy, the original block: background-coloured cut-outs, one mark per mood. */
+const faceDot: FaceFn = (pen, face, t, pal) => {
   const cut = pal.bg;
   const w = pen.box.w;
   const ex = w - 4;
   switch (face) {
+    case 'climb':
+      // Gritted and looking up the wall.
+      pen.pat(ex, 2, ['.#', '##'], cut);
+      break;
+    case 'hang':
+      // Hanging on, looking down at what's below.
+      pen.f(ex, 6, 2, 2, cut);
+      break;
+    case 'strain':
+      pen.f(ex - 1, 4, 3, 1, cut);
+      break;
+    case 'proud':
+      pen.pat(ex - 1, 3, CARET, cut);
+      break;
+    case 'bonk':
+      pen.pat(ex, 2, ['#.', '.#', '#.'], cut);
+      break;
+    case 'dizzy': {
+      pen.f(ex - 1, 2, 3, 3, cut);
+      const [ox, oy] = orbit(t, 1);
+      pen.f(ex - 1 + ox, 2 + oy, 1, 1, pal.ink);
+      break;
+    }
+    case 'sleepy':
+      pen.f(ex, 4, 2, 1, cut);
+      break;
+    case 'starry':
+      pen.pat(ex - 1, 2, PLUS, cut);
+      pen.f(ex, 3, 1, 1, twinkle(t) ? SHINE : STAR);
+      break;
     case 'stressed':
       pen.f(ex - 1, 4, 3, 1, cut);
       break;
@@ -494,12 +529,13 @@ const ALL_FACES: ReadonlySet<Face> = new Set<Face>([
   'sleepy',
   'starry',
 ]);
+const CLIMBER_FACES: ReadonlySet<Face> = new Set<Face>([...ALL_FACES, 'climb', 'hang', 'strain']);
 
 export const TUFFLINGS: readonly TufflingDef[] = [
   {
     id: 'mochi',
     name: 'Mochi',
-    tagline: 'Two button eyes, low and wide',
+    tagline: 'All-rounder - good at everything',
     w: 12,
     h: 14,
     plush: true,
@@ -511,7 +547,7 @@ export const TUFFLINGS: readonly TufflingDef[] = [
   {
     id: 'button',
     name: 'Button',
-    tagline: 'One shiny button eye',
+    tagline: 'Light - jumps high, floats down',
     w: 10,
     h: 14,
     plush: true,
@@ -521,9 +557,9 @@ export const TUFFLINGS: readonly TufflingDef[] = [
     face: faceButton,
   },
   {
-    id: 'peeper',
-    name: 'Peeper',
-    tagline: 'One big eye that says it all',
+    id: 'pepper',
+    name: 'Pepper',
+    tagline: 'Zippy - fast on its feet',
     w: 12,
     h: 14,
     plush: true,
@@ -533,15 +569,15 @@ export const TUFFLINGS: readonly TufflingDef[] = [
     face: facePeeper,
   },
   {
-    id: 'dot',
-    name: 'Classic',
-    tagline: 'The original block, six moods',
+    id: 'hugsy',
+    name: 'Hugsy',
+    tagline: 'Climber - clings to walls and ceilings',
     w: 10,
     h: 14,
     plush: false,
     streak: false,
     mask: roundedRect,
-    faces: CLASSIC_FACES,
+    faces: CLIMBER_FACES,
     face: faceDot,
   },
 ];
@@ -556,9 +592,13 @@ export function tufflingById(id: TufflingId): TufflingDef {
 // data make localStorage throw or return nothing.
 const KEY = 'foothold.tuffling';
 
+/** Earlier names, so a saved pick survives the rename. */
+const RENAMED: Record<string, TufflingId> = { dot: 'hugsy', peeper: 'pepper' };
+
 export function loadTufflingId(): TufflingId {
   try {
-    const v = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(KEY);
+    const v = raw ? (RENAMED[raw] ?? raw) : raw;
     if (v && TUFFLINGS.some((p) => p.id === v)) return v as TufflingId;
   } catch {
     /* fall through to the default */
@@ -583,21 +623,12 @@ export function saveTufflingId(id: TufflingId): void {
  * `t` drives blinks and little loops; `gaze` is -1 looking up, 1 looking down.
  * A face the tuffling does not have falls back to its default.
  */
-export function drawTuffling(
-  g: Phaser.GameObjects.Graphics,
-  def: TufflingDef,
-  face: Face,
-  box: Box,
-  facing: number,
-  pal: Palette,
-  t: number,
-  gaze = 0,
-): void {
-  const pen = new Pen(g, box, facing, def.mask);
-  const { w, h } = box;
-
-  // Body, one horizontal run at a time. Plush bodies are lit from the top-left
-  // with a shaded base, so they read as stuffed rather than cut from card.
+/**
+ * The body, one horizontal run at a time. Plush bodies are lit from the
+ * top-left with a shaded base, so they read as stuffed rather than cut from card.
+ */
+function drawBody(pen: Pen, def: TufflingDef, pal: Palette): void {
+  const { w, h } = pen.box;
   const lit = blend(pal.player, 0xffffff, 0.3);
   const shade = blend(pal.player, 0x000000, 0.13);
   for (let y = 0; y < h; y++) {
@@ -619,6 +650,56 @@ export function drawTuffling(
       }
     }
   }
+}
+
+/**
+ * A small, quiet Tuffling, for the background of the title screen. At this
+ * size the full faces turn to noise, so it's the body plus its eyes — Mochi's
+ * two, one for everyone else — with a blink now and then. `scale` shrinks the
+ * body from its real size; `hop` lifts it by that many pixels.
+ */
+export function drawTufflingMini(
+  g: Phaser.GameObjects.Graphics,
+  def: TufflingDef,
+  cx: number,
+  feetY: number,
+  facing: number,
+  pal: Palette,
+  t: number,
+  scale = 0.6,
+): void {
+  const w = Math.max(4, Math.round(def.w * scale));
+  const h = Math.max(5, Math.round(def.h * scale));
+  const box: Box = { left: Math.round(cx - w / 2), top: Math.round(feetY) - h, w, h };
+  const pen = new Pen(g, box, facing, def.mask);
+  drawBody(pen, def, pal);
+
+  const ey = Math.round(h * 0.42);
+  // Hugsy's eyes are cut-outs; everyone else has dark button eyes.
+  const ink = def.plush ? pal.ink : pal.bg;
+  const tall = blinking(t + def.w * 0.37) ? 0 : 1; // squash to a line on the blink
+  const eye = (x: number): void => pen.f(x, ey + (tall ? 0 : 1), 1, tall ? 2 : 1, ink);
+  if (def.id === 'mochi') {
+    eye(Math.round(w / 2) - 1);
+    eye(Math.round(w / 2) + 1);
+  } else {
+    eye(w - 3);
+  }
+}
+
+export function drawTuffling(
+  g: Phaser.GameObjects.Graphics,
+  def: TufflingDef,
+  face: Face,
+  box: Box,
+  facing: number,
+  pal: Palette,
+  t: number,
+  gaze = 0,
+): void {
+  const pen = new Pen(g, box, facing, def.mask);
+  const { w } = box;
+  drawBody(pen, def, pal);
 
   // Too thin to carry a face (the last sliver squeezing into the portal).
   const shown = def.faces.has(face) ? face : 'default';
@@ -641,13 +722,11 @@ function drawExtras(pen: Pen, def: TufflingDef, face: Face, t: number, pal: Pale
   }
 
   // Sweat bead, off the trailing edge so it never sits on the face.
-  if (face === 'stressed') {
+  if (face === 'stressed' || face === 'strain') {
     const sy = Math.round(((t * 2.2) % 1) * 7);
     pen.pat(-3, sy, SWEAT_BEAD, def.plush ? SWEAT : pal.player, false);
     if (def.plush) pen.x(-2, sy + 1, 1, 1, SHINE);
   }
-
-  if (!def.plush) return;
 
   if (face === 'focused' && def.streak) {
     const c = blend(pal.player, pal.bg, 0.5);
@@ -713,8 +792,8 @@ export const PREVIEW_MOODS: ReadonlyArray<{ mood: PreviewMood; label: string }> 
 
 /**
  * Draw a tuffling acting out `mood` with its feet at (`cx`, `feetY`), animated
- * by `t`. The classic block has none of the new faces and just stands there
- * for those, which is honest about what it does in game.
+ * by `t`. A face a tuffling doesn't have shows as its default. The jump preview
+ * scales with how high that tuffling actually jumps.
  */
 export function drawTufflingPreview(
   g: Phaser.GameObjects.Graphics,
@@ -766,7 +845,8 @@ export function drawTufflingPreview(
   if (mood === 'jump') {
     const p = t % 1.4;
     if (p < 1.0) {
-      yOff = -Math.round(13 * Math.sin(Math.PI * p));
+      const lift = jumpHeights(abilityOf(def.id)).single / jumpHeights(abilityOf('mochi')).single;
+      yOff = -Math.round(13 * lift * Math.sin(Math.PI * p));
       dh = 1;
       dw = -1;
       gaze = p < 0.4 ? -1 : p > 0.6 ? 1 : 0;

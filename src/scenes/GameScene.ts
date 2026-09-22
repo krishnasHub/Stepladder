@@ -1,7 +1,18 @@
 import Phaser from 'phaser';
 import { CHUNK_H, STEP } from '../chunks';
 import { Assist, NO_ASSIST, assistFor } from '../assist';
-import { playBonk, playDeath, playDoubleJump, resumeAudio, startMusic, toggleMuted } from '../audio';
+import { abilityOf } from '../abilities';
+import {
+  playBonk,
+  playDeath,
+  playDoubleJump,
+  playThump,
+  playTrophy,
+  playWoohoo,
+  resumeAudio,
+  startMusic,
+  toggleMuted,
+} from '../audio';
 import { Bot, ProjectilePool, createBot } from '../entities';
 import { pixelText, upper } from '../font';
 import { GameInput, TOUCH_BUTTONS } from '../input';
@@ -9,7 +20,7 @@ import { LEVELS, LevelDef, formatTime, recordCompletion } from '../levels';
 import { CustomLevel } from '../customLevels';
 import { PALETTES, Palette, paletteFor } from '../palette';
 import { Player } from '../player';
-import { Box, Face, TufflingDef, drawTuffling, loadTufflingId, tufflingById } from '../tufflings';
+import { Box, Face, TufflingDef, drawTuffling, loadTufflingId, tufflingById, TufflingId } from '../tufflings';
 import { Rng, levelSeed } from '../rng';
 import {
   FIXED_DT,
@@ -21,6 +32,7 @@ import {
   VIRTUAL_H,
   VIRTUAL_W,
 } from '../tuning';
+import { CUSTOM_TROPHY, Trophy, drawTrophy, loadTrophies, saveTrophy, trophyFor } from '../trophies';
 import { BuiltLevel, Rect, buildCustomLevel, buildLevel } from '../world';
 
 interface Particle {
@@ -105,6 +117,8 @@ const IDLE_AFTER = 5;
 const SCARED_HITS = 3;
 const SCARED_RADIUS = 170;
 
+/** Below this much grip (seconds), a clinging Hugsy starts to strain. */
+const LOW_GRIP = 0.8;
 /** Hands off this long and thinking gives way to dozing. */
 const SLEEP_AFTER = 12;
 /** A stomp is the signature move; the face owns it for a moment. */
@@ -194,6 +208,8 @@ export class GameScene extends Phaser.Scene {
   private runSeed = 1;
   /** A hand-built level from the editor, being playtested. Null for the real levels. */
   private custom: CustomLevel | null = null;
+  /** Playtests only: who to play as, overriding the Tuffling picked in the game. */
+  private playAs: TufflingId | null = null;
 
   private def!: LevelDef;
   private palette!: Palette;
@@ -237,6 +253,8 @@ export class GameScene extends Phaser.Scene {
   private idleTimer = 0;
   private scared = false;
   private proudTimer = 0;
+  /** This level's trophy has been picked up (ever, for real levels; this attempt, for playtests). */
+  private trophyTaken = false;
   private bonkTimer = 0;
   private dizzyTimer = 0;
   /** Level time of the last two deaths, for spotting a frustrated streak. */
@@ -260,17 +278,20 @@ export class GameScene extends Phaser.Scene {
     super('Game');
   }
 
-  init(data: { levelIndex?: number; runSeed?: number; custom?: CustomLevel }): void {
+  init(data: { levelIndex?: number; runSeed?: number; custom?: CustomLevel; playAs?: TufflingId }): void {
     this.levelIndex = data.levelIndex ?? 0;
     this.runSeed = data.runSeed ?? 1;
     this.custom = data.custom ?? null;
+    this.playAs = (this.custom && data.playAs) || null;
   }
 
   create(): void {
     this.gi = new GameInput(this);
     // Re-read on every visit: the scene object is reused, and the player may
     // have picked a different tuffling on the menu since.
-    this.tuffling = tufflingById(loadTufflingId());
+    this.tuffling = tufflingById(this.playAs ?? loadTufflingId());
+    // How it moves comes with who it is.
+    this.player.setAbility(abilityOf(this.tuffling.id));
 
     this.bgLayers = BG_LAYERS.map((cfg, i) => ({
       gfx: this.add.graphics().setDepth(i * 2).setScrollFactor(cfg.scroll),
@@ -364,6 +385,7 @@ export class GameScene extends Phaser.Scene {
     });
     this.resetBlobs();
 
+    this.trophyTaken = !this.custom && loadTrophies().has(this.levelIndex);
     this.deaths = 0;
     this.elapsed = 0;
     this.lastDeathAt = -Infinity;
@@ -403,6 +425,7 @@ export class GameScene extends Phaser.Scene {
     this.idleTimer = 0;
     this.scared = false;
     this.proudTimer = 0;
+    if (this.custom) this.trophyTaken = false;
     this.bonkTimer = 0;
     // Back again straight after the last death: a brief wobble.
     this.dizzyTimer = !fresh && this.lastDeathAt - this.prevDeathAt <= DIZZY_WINDOW ? DIZZY_TIME : 0;
@@ -677,6 +700,20 @@ export class GameScene extends Phaser.Scene {
       playBonk();
       this.bonkTimer = BONK_TIME;
     }
+    // Climbers: a thump on a wall, a woo-hoo on a ceiling, and a d'oh only
+    // when the grip gives out. Letting go on purpose is silent.
+    if (p.events.grabbedWall) {
+      playThump();
+      this.burst(p.x + p.clingSide * 5, p.y, 4, this.palette.env, 35);
+    }
+    if (p.events.grabbedCeiling) {
+      playWoohoo();
+      this.burst(p.x, p.y - PLAYER_H / 2, 5, this.palette.env, 40);
+    }
+    if (p.events.lostGrip) {
+      playBonk();
+      this.bonkTimer = BONK_TIME;
+    }
     if (this.bonkTimer > 0) this.bonkTimer -= dt;
     if (this.proudTimer > 0) this.proudTimer -= dt;
     if (this.dizzyTimer > 0) this.dizzyTimer -= dt;
@@ -697,7 +734,7 @@ export class GameScene extends Phaser.Scene {
     // player turns around or lets go. Airborne still counts: a jump taken
     // mid-sprint is part of the same continuous movement, and dropping the
     // look for every jump would make it flicker.
-    const running = Math.abs(p.vx) > TUNING.runSpeed * FOCUS_SPEED_FRAC;
+    const running = Math.abs(p.vx) > p.ability.runSpeed * FOCUS_SPEED_FRAC;
     if (running && p.facing === this.runDir) this.runTimer += dt;
     else {
       this.runTimer = 0;
@@ -799,6 +836,9 @@ export class GameScene extends Phaser.Scene {
         return this.die();
       }
     }
+
+    const trophy = this.level.trophy;
+    if (trophy && !this.trophyTaken && rectsOverlap(pb, trophy)) this.takeTrophy();
 
     if (rectsOverlap(pb, this.level.goal)) this.complete();
   }
@@ -1046,6 +1086,27 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.shake(160, 0.012);
   }
 
+  private get trophy(): Trophy {
+    return this.custom ? CUSTOM_TROPHY : trophyFor(this.levelIndex);
+  }
+
+  /**
+   * Found it. Kept the moment it's touched — dying afterwards doesn't take it
+   * back — and it does nothing for play: it's for the shelf.
+   */
+  private takeTrophy(): void {
+    this.trophyTaken = true;
+    if (!this.custom) saveTrophy(this.levelIndex);
+    playTrophy();
+    const t = this.level.trophy!;
+    const colors = Object.values(this.trophy.colors);
+    colors.forEach((c, i) => this.burst(t.x + t.w / 2, t.y + t.h / 2, 5, c, 70 + i * 12));
+    // The Tuffling is thrilled.
+    this.heartTimer = HEART_TIME;
+    this.stressTimer = 0;
+    this.showBanner('Trophy!', this.trophy.name, 1.6);
+  }
+
   private complete(): void {
     if (this.state !== 'playing') return;
     this.state = 'complete';
@@ -1173,6 +1234,13 @@ export class GameScene extends Phaser.Scene {
    */
   private currentFace(): Face {
     const has = this.tuffling.faces;
+    // Clinging says the most about this moment: on a wall, hanging, or the
+    // grip nearly gone.
+    const p = this.player;
+    if (p.cling !== 'none' && has.has('strain')) {
+      if (p.grip < LOW_GRIP) return 'strain';
+      return p.cling === 'wall' ? 'climb' : 'hang';
+    }
     if (this.bonkTimer > 0 && has.has('bonk')) return 'bonk';
     if (this.stressTimer > 0) return 'stressed';
     if (this.dizzyTimer > 0 && has.has('dizzy')) return 'dizzy';
@@ -1264,6 +1332,29 @@ export class GameScene extends Phaser.Scene {
       g.fillRect(Math.round(mx - size / 2), Math.round(my - size / 2), size, size);
     }
 
+    // --- Trophy ------------------------------------------------------------
+    // Bobbing and twinkling where it waits; a faint outline once it's yours.
+    const tr = this.level.trophy;
+    if (tr) {
+      const cx = tr.x + tr.w / 2;
+      const cy = tr.y + tr.h / 2;
+      if (this.trophyTaken) {
+        drawTrophy(g, this.trophy, cx, cy, { ghostInto: pal.bg });
+      } else {
+        const bob = Math.round(Math.sin(at * 3) * 1.5);
+        drawTrophy(g, this.trophy, cx, cy + bob);
+        const tw = Math.floor(at * 3) % 4;
+        const sparkle = [
+          [-7, -5],
+          [6, -6],
+          [7, 4],
+          [-6, 5],
+        ][tw];
+        g.fillStyle(0xffffff, 0.9);
+        g.fillRect(Math.round(cx + sparkle[0]), Math.round(cy + bob + sparkle[1]), 1, 1);
+      }
+    }
+
     // --- Projectiles -------------------------------------------------------
     g.fillStyle(pal.hazard, 1);
     for (const pr of this.projectiles.items) {
@@ -1305,10 +1396,16 @@ export class GameScene extends Phaser.Scene {
       let h = Math.max(1, Math.round(def.h * p.scaleY));
       // A 1px shiver while nervous, a sway while dizzy. Visual only — physics
       // never sees either.
-      const shiver = face === 'scared' ? Math.floor(this.elapsed * 14) % 2 : 0;
+      const shiver = face === 'scared' || face === 'strain' ? Math.floor(this.elapsed * 14) % 2 : 0;
       const sway = face === 'dizzy' ? Math.round(Math.sin(this.elapsed * 5)) : 0;
       let px = Math.round(p.x - w / 2) + shiver + sway;
       let py = Math.round(p.y + PLAYER_H / 2) - h; // anchored at the feet
+      // Clinging: pressed against the wall's face, or hanging from the ceiling.
+      if (p.cling === 'wall') {
+        px = p.clingSide > 0 ? Math.round(p.x + PLAYER_W / 2) - w + shiver : Math.round(p.x - PLAYER_W / 2) + shiver;
+      } else if (p.cling === 'ceiling') {
+        py = Math.round(p.y - PLAYER_H / 2);
+      }
 
       if (entering) {
         // Crouch, then get pulled to the portal's centre, stretching tall and
@@ -1384,6 +1481,7 @@ export class GameScene extends Phaser.Scene {
         `chunks ${this.level.chunks.length}  rects ${this.level.terrain.length}`,
         `assist ${this.assist.tier}  spots ${this.deathSpots.size}  eased ${this.easedSpots.size}`,
         `face ${this.currentFace()}  idle ${this.idleTimer.toFixed(1)}  scared ${this.scared ? 'Y' : 'N'}`,
+        `${this.tuffling.name}  cling ${p.cling}  grip ${p.grip.toFixed(2)}`,
       ]
         .join('\n')
         .toUpperCase(),

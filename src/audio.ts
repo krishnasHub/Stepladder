@@ -218,6 +218,126 @@ export function playBonk(): void {
 }
 
 /**
+ * Finding a trophy: a quick sparkly arpeggio, up a major chord and over the
+ * top. Bright and short: a little "ooh, shiny" rather than a fanfare.
+ */
+export function playTrophy(): void {
+  const c = ensure();
+  if (!c || !master || muted) return;
+  try {
+    const t = c.currentTime;
+    const notes = [1047, 1319, 1568, 2093]; // C6 E6 G6 C7
+    notes.forEach((f, i) => {
+      const start = t + i * 0.055;
+      const osc = c.createOscillator();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(f, start);
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, start);
+      g.gain.exponentialRampToValueAtTime(0.075, start + 0.006);
+      g.gain.exponentialRampToValueAtTime(0.0001, start + 0.22);
+      osc.connect(g);
+      g.connect(master!);
+      osc.start(start);
+      osc.stop(start + 0.24);
+    });
+  } catch {
+    /* never let a sound take the game down */
+  }
+}
+
+/**
+ * Hugsy grabbing a wall: a soft, padded thump. Low and short, like landing a
+ * palm flat on something, so the grab is felt without being announced.
+ */
+export function playThump(): void {
+  const c = ensure();
+  if (!c || !master || muted) return;
+  try {
+    const t = c.currentTime;
+
+    const osc = c.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(150, t);
+    osc.frequency.exponentialRampToValueAtTime(62, t + 0.09);
+
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.13, t + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.11);
+
+    osc.connect(g);
+    g.connect(master);
+    osc.start(t);
+    osc.stop(t + 0.12);
+
+    // A little felt on the front, from the noise burst with the top rolled off.
+    if (noiseBuf) {
+      const src = c.createBufferSource();
+      src.buffer = noiseBuf;
+      const lp = c.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 500;
+      const ng = c.createGain();
+      ng.gain.setValueAtTime(0.06, t);
+      ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
+      src.connect(lp);
+      lp.connect(ng);
+      ng.connect(master);
+      src.start(t);
+    }
+  } catch {
+    /* never let a sound take the game down */
+  }
+}
+
+let lastWoohoo = -1;
+
+/**
+ * Hugsy grabbing a ceiling: a delighted "woo-hoo!".
+ *
+ * Built the same way as the d'oh — a sawtooth through a narrow bandpass reads
+ * as a voice — but it goes the other way: two syllables, each pitch rising,
+ * the second higher than the first. The bandpass sits low for the "oo".
+ */
+export function playWoohoo(): void {
+  const c = ensure();
+  if (!c || !master || muted) return;
+  if (lastWoohoo >= 0 && c.currentTime - lastWoohoo < 0.4) return;
+  lastWoohoo = c.currentTime;
+  try {
+    const t = c.currentTime;
+    const syllable = (start: number, f0: number, f1: number, len: number, peak: number): void => {
+      const osc = c.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(f0, start);
+      osc.frequency.exponentialRampToValueAtTime(f1, start + len * 0.8);
+
+      const bp = c.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.Q.value = 5;
+      bp.frequency.setValueAtTime(650, start);
+      bp.frequency.exponentialRampToValueAtTime(900, start + len);
+
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, start);
+      g.gain.exponentialRampToValueAtTime(peak, start + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, start + len);
+
+      osc.connect(bp);
+      bp.connect(g);
+      g.connect(master!);
+      osc.start(start);
+      osc.stop(start + len + 0.02);
+    };
+    syllable(t, 330, 420, 0.13, 0.11);
+    syllable(t + 0.15, 440, 700, 0.22, 0.13);
+  } catch {
+    /* never let a sound take the game down */
+  }
+}
+
+/**
  * The death sound: a soft square gliding down a couple of octaves with a puff
  * on the front. Deflating, not punishing — you are about to retry in half a
  * second, so it should not scold.

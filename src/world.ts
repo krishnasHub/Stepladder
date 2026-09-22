@@ -109,6 +109,35 @@ export interface BuiltLevel {
    * chunk instead.
    */
   freeCamera?: boolean;
+  /** Where this level's trophy sits (pixel box), if it has one. */
+  trophy?: Rect;
+}
+
+/** A trophy's pickup box: a tile-centred 12x12, a touch smaller than a tile. */
+function trophyBox(tx: number, ty: number): Rect {
+  return { x: tx * TILE + 2, y: ty * TILE + 2, w: TILE - 4, h: TILE - 4 };
+}
+
+/**
+ * Trophy spots are marked 'C' in chunks, and a level usually contains several.
+ * Exactly one is used: the one nearest 60% of the way through, so the trophy
+ * sits in the meat of the level rather than at either end. Chosen from the
+ * layout alone — no RNG draw — so it can never disturb the level's seed.
+ */
+function pickTrophySpot(placed: PlacedChunk[]): { tx: number; ty: number } | null {
+  let best: { tx: number; ty: number } | null = null;
+  let bestD = Infinity;
+  const aim = (placed.length - 1) * 0.6;
+  placed.forEach((p, i) => {
+    const c = findMarker(p.def.rows, 'C');
+    if (!c) return;
+    const d = Math.abs(i - aim);
+    if (d < bestD) {
+      bestD = d;
+      best = { tx: p.ox + c.x, ty: p.oy + c.y };
+    }
+  });
+  return best;
 }
 
 export interface LevelBuildSpec {
@@ -370,6 +399,8 @@ export function buildLevel(spec: LevelBuildSpec, rng: Rng): BuiltLevel {
   const totalDistance =
     (goalX + TILE / 2 - startX) * axis.x + (goalY + TILE / 2 - startY) * axis.y;
 
+  const spot = pickTrophySpot(placed);
+
   return {
     grid,
     terrain,
@@ -387,6 +418,7 @@ export function buildLevel(spec: LevelBuildSpec, rng: Rng): BuiltLevel {
       w: (maxTx - minTx) * TILE,
       h: (maxTy - minTy) * TILE,
     },
+    trophy: spot ? trophyBox(spot.tx, spot.ty) : undefined,
   };
 }
 
@@ -413,6 +445,7 @@ export function buildCustomLevel(rows: string[]): BuiltLevel {
   const spawns: Spawn[] = [];
   let start = { x: 1, y: h - 3 };
   let exit = { x: w - 2, y: h - 3 };
+  let trophy: Rect | undefined;
 
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
@@ -433,6 +466,9 @@ export function buildCustomLevel(rows: string[]): BuiltLevel {
           break;
         case 'X':
           exit = { x, y };
+          break;
+        case 'C':
+          trophy ??= trophyBox(x, y);
           break;
         default:
           break;
@@ -486,5 +522,6 @@ export function buildCustomLevel(rows: string[]): BuiltLevel {
       h: (maxTy - minTy) * TILE,
     },
     freeCamera: true,
+    trophy,
   };
 }

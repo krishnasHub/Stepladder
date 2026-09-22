@@ -6,6 +6,7 @@
  *
  *   .  empty     #  platform     ^  spike
  *   T  turret    E  start        X  exit portal
+ *   C  trophy (optional, at most one)
  *
  * They live in this browser's localStorage for now. Nothing here imports
  * Phaser, so the editor page can use it without loading the game.
@@ -29,6 +30,7 @@ export const TILES = {
   turret: 'T',
   start: 'E',
   portal: 'X',
+  trophy: 'C',
 } as const;
 
 export type TileChar = (typeof TILES)[keyof typeof TILES];
@@ -130,6 +132,10 @@ export function checkLevel(level: CustomLevel): LevelIssue[] {
     if (at(p.x, p.y - 1) === TILES.solid) {
       issues.push({ severity: 'warning', message: 'Portal is half inside a platform above it.', ...p });
     }
+  }
+
+  for (const t of findAll(level, TILES.trophy).slice(1)) {
+    issues.push({ severity: 'error', message: 'Only one trophy allowed.', ...t });
   }
 
   for (const t of findAll(level, TILES.turret)) {

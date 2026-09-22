@@ -4,6 +4,7 @@ import { validateChunks } from './chunks';
 import { BootScene } from './scenes/BootScene';
 import { GameScene } from './scenes/GameScene';
 import { MenuScene } from './scenes/MenuScene';
+import { TrophiesScene } from './scenes/TrophiesScene';
 import { TufflingsScene } from './scenes/TufflingsScene';
 import { VIRTUAL_H, VIRTUAL_W } from './tuning';
 
@@ -27,7 +28,7 @@ const game = new Phaser.Game({
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
   fps: { target: 60 },
-  scene: [BootScene, MenuScene, TufflingsScene, GameScene],
+  scene: [BootScene, MenuScene, TufflingsScene, TrophiesScene, GameScene],
 });
 
 // Dev handles for debugging from the console.

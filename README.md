@@ -74,6 +74,30 @@ npm run dev
 Hold jump longer to jump higher. The double jump refreshes every time you stomp
 a bot.
 
+## Tufflings
+
+Pick who does the jumping from **Tufflings** on the title screen. Every one can
+finish every level; their differences open shortcuts and change the ride.
+
+| Tuffling | Good at | Costs |
+|---|---|---|
+| **Mochi** | all-rounder, the reference tuning | nothing |
+| **Button** | jumps highest, floats down slowly | slower on the ground, floaty landings |
+| **Pepper** | fastest on its feet | shorter jump, slides a little when stopping |
+| **Hugsy** | clings to walls and ceilings | slowest, lowest jumps |
+
+**Hugsy** grabs a wall by jumping or falling *into* it: hold toward the wall to
+climb, away to slide down, neither to hang. It grabs a ceiling automatically
+when it hits one, and left/right shimmy along it. Jump lets go. Grip drains
+while clinging, faster when moving, and refills on landing or stomping a bot;
+when it runs out, Hugsy falls. Clinging never refreshes the double jump.
+
+## Trophies
+
+Each level hides one trophy, somewhere a little out of the way. They do
+nothing for play; they're for the **Trophies** shelf on the title screen.
+Once found, a trophy is yours for good, even if you die straight after.
+
 ## Build and share
 
 ```bash
@@ -113,23 +137,27 @@ src/
   music.ts      Chirpy music-box score: a theme for the title and each level.
   assist.ts     Local difficulty help at repeated failure points.
   input.ts      Keyboard + touch, one surface.
-  tufflings.ts   The Tufflings: every playable character, its faces, and the pick.
-  scenes/       Menu, Tufflings (character select) and Game.
+  abilities.ts  How each Tuffling moves: speeds, jumps, float, and Hugsy's grip.
+  tufflings.ts  How each Tuffling looks: bodies, faces, and the saved pick.
+  trophies.ts   The six trophies, their pixel art, and which ones you've found.
+  scenes/       Menu, Tufflings (character select), Trophies (the shelf), Game.
 ```
 
 ## Level editor
 
 With the dev server running, open **http://localhost:5199/editor.html** to
-hand-build a level: platforms, spikes, turrets, a start point and an exit
-portal, in any of the six palettes. **Play ▶** (or Ctrl+Enter) opens it in the
+hand-build a level: platforms, spikes, turrets, a start point, an exit
+portal and (optionally) a trophy, in any of the six palettes. **Play ▶** (or Ctrl+Enter) opens it in the
 game; finishing it starts it again, so you can keep trying. Checks in the
 sidebar flag anything that would stop it working, like a missing portal or a
 turret too boxed-in to stomp.
 
-It also checks the level **can be finished**, using the game's own physics: a
-search drives an invisible player through every distinct route it can reach
-until it touches the portal, then draws that route over the level. If there's
-no way through, it says so and marks the closest point it got to. It runs in the
+It also checks the level **can be finished by every Tuffling**, using the
+game's own physics: a search drives an invisible Tuffling through every
+distinct route it can reach until it touches the portal, once each for Mochi,
+Button, Pepper and Hugsy, and draws the route (click a name to see theirs). If
+one can't get through, it says who, and marks the closest point it got to. If
+the level has a trophy, it then checks who can reach that too. It runs in the
 background after you pause editing, with no time limit; turret bullets are
 ignored, since dodging them is timing, not whether a route exists.
 
