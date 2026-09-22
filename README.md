@@ -2,7 +2,7 @@
 
 > The things trying to kill you are also the only way up.
 
-![Foothold — the player mid-leap toward a turret on a platform above, in the vertical level The Climb](docs/screenshots/the-climb.png)
+![Foothold — Mochi mid-leap beside a turret on the ledge above, in the vertical level The Climb](docs/screenshots/the-climb.png)
 
 A pastel 2D procedurally-generated side-scroller. Six levels across three
 orientations — run right, climb up, and ascend diagonally — all driven by one
@@ -17,11 +17,13 @@ notes — invariants, environment traps, how to verify changes, and what is open
 
 ## Screenshots
 
-| Ground Floor — the horizontal opener | Ascent — diagonal, with spikes |
+| Ground Floor — Button jumping for a trophy | Ascent — Pepper leaping a spike |
 | :--- | :--- |
-| ![Running right and leaping a pit, with parallax platforms behind](docs/screenshots/ground-floor.png) | ![Leaping a spike on a diagonal climb](docs/screenshots/ascent.png) |
-| **Level select** | **The palette shifts every level** |
-| ![The level select screen listing six levels](docs/screenshots/menu.png) | Mint, lavender, peach, sky, rose, slate — four colours each. |
+| ![Button, the light Tuffling, rising toward the Lost Button trophy above the platforms of Ground Floor](docs/screenshots/ground-floor.png) | ![Pepper, the fast Tuffling, mid-leap over a spike on a diagonal climb, with a walker bot below](docs/screenshots/ascent.png) |
+| **Title screen** | **Pick your Tuffling** |
+| ![The title screen: Mochi beside the Foothold title, the six levels, Tufflings and Trophies, and the other Tufflings idling on ledges at the sides](docs/screenshots/menu.png) | ![The Tufflings screen: Mochi, Button, Pepper and Hugsy side by side with heart eyes, and Mochi's jump, speed and climb bars](docs/screenshots/tufflings.png) |
+| **Hugsy hangs from ceilings and climbs walls** | **The palette shifts every level** |
+| ![Hugsy, the climber, hanging from the underside of a ledge in The Climb](docs/screenshots/hugsy.png) | Mint, lavender, peach, sky, rose, slate — four colours each. |
 
 ---
 
